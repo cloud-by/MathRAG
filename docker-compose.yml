@@ -1,0 +1,9 @@
+services:
+  mathrag:
+    build: .
+    container_name: mathrag-app
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    restart: unless-stopped
