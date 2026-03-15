@@ -1,0 +1,652 @@
+[
+  {
+    "index": 0,
+    "chunk_id": "k001_chunk_0",
+    "source_id": "k001",
+    "title": "代数式的含义",
+    "category": "concept",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 1,
+    "chunk_id": "k002_chunk_0",
+    "source_id": "k002",
+    "title": "同类项的判断",
+    "category": "concept",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 2,
+    "chunk_id": "k003_chunk_0",
+    "source_id": "k003",
+    "title": "合并同类项",
+    "category": "simplification",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 3,
+    "chunk_id": "k004_chunk_0",
+    "source_id": "k004",
+    "title": "去括号法则",
+    "category": "simplification",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 4,
+    "chunk_id": "k005_chunk_0",
+    "source_id": "k005",
+    "title": "整式加减的一般步骤",
+    "category": "simplification",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 5,
+    "chunk_id": "k006_chunk_0",
+    "source_id": "k006",
+    "title": "分数的基本性质",
+    "category": "fraction",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 6,
+    "chunk_id": "k007_chunk_0",
+    "source_id": "k007",
+    "title": "分数加减法",
+    "category": "fraction",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 7,
+    "chunk_id": "k008_chunk_0",
+    "source_id": "k008",
+    "title": "比与比例的概念",
+    "category": "ratio",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 8,
+    "chunk_id": "k009_chunk_0",
+    "source_id": "k009",
+    "title": "比例的基本性质",
+    "category": "ratio",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 9,
+    "chunk_id": "k010_chunk_0",
+    "source_id": "k010",
+    "title": "等式的基本性质",
+    "category": "equation",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 10,
+    "chunk_id": "k011_chunk_0",
+    "source_id": "k011",
+    "title": "一元一次方程的定义",
+    "category": "linear_equation",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 11,
+    "chunk_id": "k012_chunk_0",
+    "source_id": "k012",
+    "title": "一元一次方程的移项法",
+    "category": "linear_equation",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 12,
+    "chunk_id": "k013_chunk_0",
+    "source_id": "k013",
+    "title": "含分母的一元一次方程",
+    "category": "linear_equation",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 13,
+    "chunk_id": "k014_chunk_0",
+    "source_id": "k014",
+    "title": "方程解的检验",
+    "category": "linear_equation",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 14,
+    "chunk_id": "k015_chunk_0",
+    "source_id": "k015",
+    "title": "不等式的基本性质",
+    "category": "inequality",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 15,
+    "chunk_id": "k016_chunk_0",
+    "source_id": "k016",
+    "title": "一元一次不等式的求解",
+    "category": "inequality",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 16,
+    "chunk_id": "k017_chunk_0",
+    "source_id": "k017",
+    "title": "绝对值的意义",
+    "category": "absolute_value",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 17,
+    "chunk_id": "k018_chunk_0",
+    "source_id": "k018",
+    "title": "解简单绝对值方程",
+    "category": "absolute_value",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 18,
+    "chunk_id": "k019_chunk_0",
+    "source_id": "k019",
+    "title": "幂的定义",
+    "category": "power",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 19,
+    "chunk_id": "k020_chunk_0",
+    "source_id": "k020",
+    "title": "同底数幂相乘",
+    "category": "power",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 20,
+    "chunk_id": "k021_chunk_0",
+    "source_id": "k021",
+    "title": "幂的乘方",
+    "category": "power",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 21,
+    "chunk_id": "k022_chunk_0",
+    "source_id": "k022",
+    "title": "积的乘方与商的乘方",
+    "category": "power",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 22,
+    "chunk_id": "k023_chunk_0",
+    "source_id": "k023",
+    "title": "平方根的概念",
+    "category": "root",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 23,
+    "chunk_id": "k024_chunk_0",
+    "source_id": "k024",
+    "title": "算术平方根",
+    "category": "root",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 24,
+    "chunk_id": "k025_chunk_0",
+    "source_id": "k025",
+    "title": "二次根式的基本性质",
+    "category": "root",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 25,
+    "chunk_id": "k026_chunk_0",
+    "source_id": "k026",
+    "title": "多项式的次数",
+    "category": "polynomial",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 26,
+    "chunk_id": "k027_chunk_0",
+    "source_id": "k027",
+    "title": "单项式乘单项式",
+    "category": "polynomial",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 27,
+    "chunk_id": "k028_chunk_0",
+    "source_id": "k028",
+    "title": "单项式乘多项式",
+    "category": "polynomial",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 28,
+    "chunk_id": "k029_chunk_0",
+    "source_id": "k029",
+    "title": "多项式乘多项式",
+    "category": "polynomial",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 29,
+    "chunk_id": "k030_chunk_0",
+    "source_id": "k030",
+    "title": "平方差公式",
+    "category": "identity",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 30,
+    "chunk_id": "k031_chunk_0",
+    "source_id": "k031",
+    "title": "完全平方公式",
+    "category": "identity",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 31,
+    "chunk_id": "k032_chunk_0",
+    "source_id": "k032",
+    "title": "提公因式法分解因式",
+    "category": "factoring",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 32,
+    "chunk_id": "k033_chunk_0",
+    "source_id": "k033",
+    "title": "公式法分解因式",
+    "category": "factoring",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 33,
+    "chunk_id": "k034_chunk_0",
+    "source_id": "k034",
+    "title": "一元二次方程的定义",
+    "category": "quadratic_equation",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 34,
+    "chunk_id": "k035_chunk_0",
+    "source_id": "k035",
+    "title": "因式分解法解一元二次方程",
+    "category": "quadratic_equation",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 35,
+    "chunk_id": "k036_chunk_0",
+    "source_id": "k036",
+    "title": "配方法的基本思想",
+    "category": "quadratic_equation",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 36,
+    "chunk_id": "k037_chunk_0",
+    "source_id": "k037",
+    "title": "求根公式",
+    "category": "quadratic_equation",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 37,
+    "chunk_id": "k038_chunk_0",
+    "source_id": "k038",
+    "title": "判别式与根的情况",
+    "category": "quadratic_equation",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 38,
+    "chunk_id": "k039_chunk_0",
+    "source_id": "k039",
+    "title": "函数的概念",
+    "category": "function",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 39,
+    "chunk_id": "k040_chunk_0",
+    "source_id": "k040",
+    "title": "自变量取值范围",
+    "category": "function",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 40,
+    "chunk_id": "k041_chunk_0",
+    "source_id": "k041",
+    "title": "一次函数的定义",
+    "category": "linear_function",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 41,
+    "chunk_id": "k042_chunk_0",
+    "source_id": "k042",
+    "title": "一次函数图像的性质",
+    "category": "linear_function",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 42,
+    "chunk_id": "k043_chunk_0",
+    "source_id": "k043",
+    "title": "平面直角坐标系中的点",
+    "category": "geometry",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 43,
+    "chunk_id": "k044_chunk_0",
+    "source_id": "k044",
+    "title": "两点间距离公式（轴对齐情形）",
+    "category": "geometry",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 44,
+    "chunk_id": "k045_chunk_0",
+    "source_id": "k045",
+    "title": "勾股定理",
+    "category": "geometry",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 45,
+    "chunk_id": "k046_chunk_0",
+    "source_id": "k046",
+    "title": "平均数",
+    "category": "statistics",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 46,
+    "chunk_id": "k047_chunk_0",
+    "source_id": "k047",
+    "title": "中位数与众数",
+    "category": "statistics",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 47,
+    "chunk_id": "k048_chunk_0",
+    "source_id": "k048",
+    "title": "概率的基本意义",
+    "category": "probability",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 48,
+    "chunk_id": "k049_chunk_0",
+    "source_id": "k049",
+    "title": "等可能事件的概率计算",
+    "category": "probability",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  },
+  {
+    "index": 49,
+    "chunk_id": "k050_chunk_0",
+    "source_id": "k050",
+    "title": "列方程解决实际问题的一般方法",
+    "category": "application",
+    "metadata": {
+      "source_file": "math_knowledge_seed.jsonl",
+      "chunk_index": 0,
+      "has_example": true,
+      "has_steps": true
+    }
+  }
+]

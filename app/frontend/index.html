@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MathRAG - 数学问答系统</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div>
+        <h1>MathRAG</h1>
+        <p class="hero-subtitle">基于 FastAPI + FAISS + 大模型 API 的数学 RAG 问答原型系统</p>
+      </div>
+      <div class="hero-badge">MVP</div>
+    </header>
+
+    <main class="main-grid">
+      <section class="panel chat-panel">
+        <div class="panel-header">
+          <h2>提问区</h2>
+          <button id="clear-chat-btn" class="ghost-btn" type="button">清空对话</button>
+        </div>
+
+        <div id="chat-history" class="chat-history" aria-live="polite">
+          <div class="message assistant-message welcome-card">
+            <div class="message-role">系统</div>
+            <div class="message-content">
+              你好，欢迎来到 MathRAG。你可以先试试这些问题：<br />
+              1. <code>x^2+4x+3=0 怎么解？</code><br />
+              2. <code>平方差公式是什么？</code><br />
+              3. <code>为什么这题可以因式分解？</code>
+            </div>
+          </div>
+        </div>
+
+        <form id="chat-form" class="input-area">
+          <label class="sr-only" for="question-input">输入数学问题</label>
+          <textarea
+            id="question-input"
+            class="question-input"
+            placeholder="请输入你的数学问题，例如：2x^2-5x-3=0 怎么解？"
+            rows="4"
+          ></textarea>
+          <div class="input-toolbar">
+            <div class="toolbar-left">
+              <label for="top-k-select">参考知识条数</label>
+              <select id="top-k-select">
+                <option value="2">2</option>
+                <option value="3" selected>3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+              </select>
+            </div>
+            <button id="send-btn" class="send-btn" type="submit">发送</button>
+          </div>
+        </form>
+      </section>
+
+      <aside class="panel result-panel">
+        <div class="panel-header">
+          <h2>回答结果</h2>
+          <span id="status-text" class="status-text">待提问</span>
+        </div>
+
+        <section class="result-section">
+          <h3>答案展示</h3>
+          <div id="answer-box" class="result-card empty-state">提交问题后，这里会显示答案。</div>
+        </section>
+
+        <section class="result-section">
+          <h3>参考知识展示</h3>
+          <div id="references-box" class="stack-list empty-state">提交问题后，这里会显示参考知识。</div>
+        </section>
+
+        <section class="result-section">
+          <h3>相关推荐问题展示</h3>
+          <div id="related-box" class="related-list empty-state">提交问题后，这里会显示相关推荐问题。</div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>
