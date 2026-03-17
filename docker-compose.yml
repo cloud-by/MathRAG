@@ -1,18 +1,15 @@
 services:
   mathrag:
-    build: .
+    image: cloudby/mathrag:latest
     container_name: mathrag-app
     ports:
       - "127.0.0.1:8000:8000"
     env_file:
       - .env
     restart: unless-stopped
+    pull_policy: always
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
       interval: 30s
       timeout: 5s
       retries: 3
-    logging:
-      options:
-        max-size: "10m"
-        max-file: "3"
