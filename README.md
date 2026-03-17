@@ -1,145 +1,88 @@
 # MathRAG
 
-A RAG-based mathematical question answering prototype system built with **FastAPI + FAISS + Embedding API + DeepSeek API**.
+基于 **FastAPI + FAISS + Embedding API + DeepSeek(OpenAI 兼容) API** 的数学问答 RAG 原型系统。
 
-MathRAG is designed as a minimum viable demo for mathematical tutoring scenarios. It retrieves relevant knowledge from a structured math knowledge base, then uses a large language model to generate step-by-step answers, reference knowledge, and related follow-up questions.
+该项目面向“数学助教/教学演示”场景：
+- 先从结构化知识库中召回相关知识；
+- 再由大模型生成结构化回答（答案、步骤、参考知识、追问建议）；
+- 同时提供可直接访问的浏览器前端页面与 API。
 
-## Features
+---
 
-- Mathematical question answering based on RAG
-- FAISS-based vector retrieval
-- Step-by-step solution generation
-- Reference knowledge display
-- Related follow-up question recommendation
-- Simple multi-turn dialogue support
-- FastAPI backend + browser frontend
+## 1. 核心能力
 
-## Project Structure
+- 数学问答（RAG 检索增强）
+- FAISS 向量检索（支持内积检索）
+- 结构化回答输出（`answer` / `steps` / `references` / `related_questions`）
+- 简单多轮对话历史输入（`history`）
+- FastAPI 后端 + 原生前端静态页面
+- Docker / Docker Compose 部署支持
+- 基于 `pytest` 的 API 测试样例
+
+---
+
+## 2. 项目结构
 
 ```text
 MathRAG/
-├─ README.md
-├─ requirements.txt
-├─ .env
-├─ run.py
-│
 ├─ app/
-│  ├─ __init__.py
-│  ├─ main.py
-│  │
-│  ├─ api/
-│  │  ├─ __init__.py
-│  │  └─ chat.py
-│  │
-│  ├─ core/
-│  │  ├─ __init__.py
-│  │  ├─ config.py
-│  │  └─ logger.py
-│  │
-│  ├─ schemas/
-│  │  ├─ __init__.py
-│  │  └─ chat.py
-│  │
-│  ├─ services/
-│  │  ├─ __init__.py
-│  │  ├─ embedding_service.py
-│  │  ├─ vector_store.py
-│  │  ├─ retriever.py
-│  │  ├─ llm_service.py
-│  │  └─ rag_pipeline.py
-│  │
-│  ├─ utils/
-│  │  ├─ __init__.py
-│  │  ├─ text_cleaner.py
-│  │  ├─ prompt_builder.py
-│  │  └─ math_postprocess.py
-│  │
-│  └─ frontend/
-│     ├─ index.html
-│     ├─ style.css
-│     └─ app.js
-│
-├─ scripts/
-│  ├─ __init__.py
-│  ├─ build_kb.py
-│  ├─ build_index.py
-│  ├─ demo_query.py
-│  └─ test_rag.py
-│
+│  ├─ api/                # 路由层
+│  ├─ core/               # 配置与日志
+│  ├─ frontend/           # 前端静态页面
+│  ├─ schemas/            # 请求/响应模型
+│  ├─ services/           # embedding/retriever/llm/rag 主逻辑
+│  └─ utils/              # 文本清洗、提示词构建、后处理
 ├─ data/
-│  ├─ raw/
-│  │  └─ math_knowledge_seed.jsonl
-│  ├─ processed/
-│  │  └─ kb_chunks.jsonl
-│  └─ index/
-│     ├─ faiss.index
-│     └─ id_map.json
-│
-└─ tests/
-   ├─ __init__.py
-   └─ test_chat_api.py
+│  ├─ raw/                # 原始知识库
+│  ├─ processed/          # chunk 化后的知识数据
+│  └─ index/              # FAISS 索引与映射
+├─ scripts/               # 构建知识库、构建索引、检索与RAG调试脚本
+├─ tests/                 # API 测试
+├─ Dockerfile
+├─ docker-compose.yml
+├─ requirements.txt
+├─ run.py
+└─ README.md
 ```
 
-## Workflow
+---
 
-MathRAG works in the following steps:
+## 3. 环境要求
 
-1. Prepare raw math knowledge in JSONL format.
-2. Run `build_kb.py` to normalize and convert raw knowledge into retrieval-ready chunks.
-3. Run `build_index.py` to generate embeddings and build the FAISS index.
-4. When a user asks a question:
-   - the system embeds the question,
-   - retrieves the most relevant knowledge from FAISS,
-   - constructs a prompt with question + history + retrieved knowledge,
-   - calls the LLM API to produce a structured answer.
-5. The frontend displays:
-   - answer,
-   - steps,
-   - reference knowledge,
-   - related follow-up questions.
+推荐：
+- Python 3.11
+- Linux / macOS / Windows
+- 可用的 Embedding API Key
+- 可用的 DeepSeek API Key（OpenAI 兼容接口）
 
-## Environment Requirements
+> 说明：项目中包含 `faiss-cpu`，在不同平台下安装可能稍有差异。优先使用 Python 3.11 + 虚拟环境。
 
-Recommended:
+---
 
-- Python 3.10 / 3.11 / 3.12
-- Windows / Linux / macOS
-- Available Embedding API key
-- Available DeepSeek API key
+## 4. 安装
 
-> Note: some third-party packages may behave inconsistently on very new Python versions. If you encounter odd dependency issues, Python 3.11 is the safest choice.
-
-## Installation
-
-Create and activate a virtual environment first, then install dependencies.
-
-### Windows PowerShell
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-
-### macOS / Linux
+### 4.1 本地安装
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate  # Windows: .\.venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Configuration
+---
 
-Create a `.env` file in the project root.
+## 5. 配置 `.env`
 
-Example:
+在项目根目录创建 `.env` 文件：
 
 ```env
+# App
+APP_NAME=MathRAG MVP
 APP_HOST=127.0.0.1
 APP_PORT=8000
-APP_DEBUG=true
+DEBUG=true
 
+# Embedding
 EMBEDDING_API_KEY=your_embedding_api_key
 EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 EMBEDDING_MODEL=text-embedding-v4
@@ -148,6 +91,7 @@ EMBEDDING_BATCH_SIZE=10
 EMBEDDING_TIMEOUT=60
 EMBEDDING_NORMALIZE=true
 
+# LLM (DeepSeek OpenAI-Compatible)
 LLM_API_KEY=your_deepseek_api_key
 LLM_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-reasoner
@@ -156,31 +100,34 @@ LLM_MAX_TOKENS=2048
 LLM_TEMPERATURE=0.2
 LLM_RETURN_REASONING=false
 
+# Retrieval
 TOP_K=3
 USE_INNER_PRODUCT=true
 ```
 
-## Data Preparation
+---
 
-Place the raw seed knowledge file here:
+## 6. 数据准备与索引构建
+
+### 6.1 原始知识数据位置
 
 ```text
 data/raw/math_knowledge_seed.jsonl
 ```
 
-Then run the preprocessing script:
+### 6.2 构建知识 chunk
 
 ```bash
 python -m scripts.build_kb
 ```
 
-After that, build the vector index:
+### 6.3 构建向量索引
 
 ```bash
 python -m scripts.build_index
 ```
 
-If successful, the following files will be generated:
+成功后会生成：
 
 ```text
 data/processed/kb_chunks.jsonl
@@ -188,133 +135,162 @@ data/index/faiss.index
 data/index/id_map.json
 ```
 
-## Retrieval Validation
+---
 
-Run retrieval-only testing:
+## 7. 调试脚本
+
+### 7.1 仅检索验证
 
 ```bash
 python -m scripts.demo_query --question "x^2+4x+3=0 怎么解？" --show-context
 ```
 
-Interactive retrieval mode:
+交互模式：
 
 ```bash
 python -m scripts.demo_query --interactive --show-context
 ```
 
-## RAG Validation
-
-Run end-to-end RAG testing:
+### 7.2 RAG 端到端验证
 
 ```bash
 python -m scripts.test_rag --question "x^2+4x+3=0 怎么解？" --show-references
 ```
 
-This verifies the whole chain:
+---
 
-- knowledge retrieval
-- prompt construction
-- LLM generation
-- structured answer output
+## 8. 启动服务
 
-## Run the Web App
-
-Start the FastAPI service:
+### 8.1 本地启动
 
 ```bash
 python run.py
 ```
 
-or:
+或开发模式：
 
 ```bash
-uvicorn app.main:app --reload
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-After startup, open:
+启动后访问：
+- 首页：`http://127.0.0.1:8000/`
+- Swagger：`http://127.0.0.1:8000/docs`
+- 健康检查：`http://127.0.0.1:8000/health`
 
-- Home page: `http://127.0.0.1:8000/`
-- API docs: `http://127.0.0.1:8000/docs`
-- Health check: `http://127.0.0.1:8000/health`
+### 8.2 Docker Compose 启动
 
-## API Example
+```bash
+docker compose up -d --build
+```
 
-### POST `/api/chat`
+查看日志：
 
-Request body:
+```bash
+docker compose logs -f mathrag
+```
+
+停止：
+
+```bash
+docker compose down
+```
+
+---
+
+## 9. API 示例
+
+### 9.1 `POST /api/chat`
+
+请求：
 
 ```json
 {
   "question": "x^2+4x+3=0 怎么解？",
-  "history": [],
+  "history": [
+    {"role": "user", "content": "我不会解一元二次方程"}
+  ],
   "top_k": 3
 }
 ```
 
-Response example:
+响应（示例）：
 
 ```json
 {
-  "answer": "解为 x=-1 或 x=-3，通过因式分解法求解。",
+  "question": "x^2+4x+3=0 怎么解？",
+  "answer": "可因式分解得到 x=-1 或 x=-3。",
   "steps": [
-    "方程已是标准形式 x^2+4x+3=0。",
+    "将方程整理为标准形式。",
     "因式分解为 (x+1)(x+3)=0。",
-    "令每个因式等于0，得到 x=-1 或 x=-3。"
+    "分别令因式为0得到两个根。"
   ],
-  "used_knowledge": [
-    "因式分解法解一元二次方程"
-  ],
+  "used_knowledge": ["因式分解法解一元二次方程"],
+  "related_questions": ["如何用求根公式解？", "什么情况下适合因式分解？"],
   "references": [
     {
-      "title": "因式分解法解一元二次方程",
+      "rank": 1,
+      "score": 0.91,
+      "index": 12,
+      "chunk_id": "k0001_chunk_0",
+      "source_id": "k0001",
       "category": "quadratic_equation",
-      "score": 0.687758
+      "stage": "junior_secondary",
+      "course": "初中代数",
+      "title": "因式分解法解一元二次方程",
+      "keywords": ["一元二次方程", "因式分解"],
+      "content": "...",
+      "example": "...",
+      "steps": ["..."],
+      "prerequisites": ["整式乘法"],
+      "difficulty": "easy",
+      "answer_context": "...",
+      "retrieval_text": "...",
+      "source_line": 1,
+      "metadata": {}
     }
   ],
-  "related_questions": [
-    "如何用求根公式解这道题？",
-    "为什么这题可以因式分解？"
-  ]
+  "reasoning_content": null
 }
 ```
 
-## Current MVP Scope
+---
 
-This prototype currently focuses on:
+## 10. 测试
 
-- algebra-oriented math QA
-- structured seed knowledge retrieval
-- Chinese math tutoring scenarios
-- simple multi-turn question answering
+运行测试：
 
-It is suitable for demo, coursework, and early-stage graduation project development.
+```bash
+pytest -q
+```
 
-## Suggested Next Steps
+当前测试主要覆盖：
+- `/api/chat` 成功响应结构
+- `history` 参数透传
+- 参数校验（空问题、非法 `top_k`）
+- 管道异常时的 HTTP 状态码与错误信息
 
-- expand the knowledge base from 50 items to 200 / 500 / 2000 items
-- improve prompt constraints and answer formatting
-- add formula rendering support
-- optimize frontend interaction and history management
-- add reranking for better retrieval quality
-- optionally add user logging and evaluation metrics
+---
 
-## Troubleshooting
+## 11. 常见问题
 
-### `ModuleNotFoundError: No module named 'app'`
+### 11.1 `ModuleNotFoundError: No module named 'app'`
 
-Run scripts from the project root using module mode:
+请确保在项目根目录下执行，并优先使用模块方式：
 
 ```bash
 python -m scripts.build_index
 ```
 
-### `Error code: 402 - Insufficient Balance`
+### 11.2 大模型接口报鉴权/余额错误
 
-Your LLM API request reached the DeepSeek server successfully, but the account balance is insufficient. Recharge the API account and retry.
+- 检查 `LLM_API_KEY` 是否正确；
+- 检查 DeepSeek 账户余额与调用权限；
+- 检查 `LLM_BASE_URL` 是否可访问。
 
-### Frontend page loads but styles are missing
+### 11.3 首页能打开但样式丢失
 
-Check whether these files exist:
+确认以下静态文件存在：
 
 ```text
 app/frontend/index.html
@@ -322,6 +298,18 @@ app/frontend/style.css
 app/frontend/app.js
 ```
 
+---
+
+## 12. 后续可扩展方向
+
+- 引入 rerank 提升召回精度
+- 增加公式渲染（如 KaTeX）
+- 增强多轮上下文管理与记忆策略
+- 增加评测集与自动化评估脚本
+- 扩展更多学段与题型知识库
+
+---
+
 ## License
 
-This repository is intended for educational and research prototype use.
+本项目主要用于教学、演示与研究原型。
