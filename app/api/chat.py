@@ -3,7 +3,14 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException, status
-from openai import APIConnectionError, APIError, APIStatusError, APITimeoutError, AuthenticationError, RateLimitError
+from openai import (
+    APIConnectionError,
+    APIError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    RateLimitError,
+)
 
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.rag_pipeline import chat_with_rag
@@ -13,13 +20,23 @@ router = APIRouter(prefix="/api", tags=["chat"])
 
 
 def _history_to_dicts(history: List[Any]) -> List[Dict[str, str]]:
-    return [
-        {
-            "role": item.role,
-            "content": item.content,
-        }
-        for item in history
-    ]
+    normalized_history: List[Dict[str, str]] = []
+
+    for item in history:
+        role = str(getattr(item, "role", "")).strip().lower()
+        content = str(getattr(item, "content", "")).strip()
+
+        if not role or not content:
+            continue
+
+        normalized_history.append(
+            {
+                "role": role,
+                "content": content,
+            }
+        )
+
+    return normalized_history
 
 
 @router.post("/chat", response_model=ChatResponse, summary="数学 RAG 问答")
@@ -30,6 +47,10 @@ def chat(request: ChatRequest) -> ChatResponse:
             history=_history_to_dicts(request.history),
             top_k=request.top_k,
         )
+
+        if not isinstance(result, dict):
+            raise ValueError("RAG 管道返回结果格式错误，应为对象")
+
         return ChatResponse(**result)
 
     except ValueError as exc:
@@ -65,16 +86,20 @@ def chat(request: ChatRequest) -> ChatResponse:
     except APIConnectionError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="无法连接到大模型 API，请检查网络或 base_url。",
+            detail="无法连接到大模型 API，请检查网络、API 服务状态或 base_url。",
         ) from exc
 
     except APIStatusError as exc:
         message = "大模型 API 返回错误。"
+
         try:
             error_obj = getattr(exc, "response", None)
             if error_obj is not None:
                 payload = error_obj.json()
-                message = payload.get("error", {}).get("message") or message
+                if isinstance(payload, dict):
+                    error_info = payload.get("error", {})
+                    if isinstance(error_info, dict):
+                        message = error_info.get("message") or message
         except Exception:
             pass
 

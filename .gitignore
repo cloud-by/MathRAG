@@ -3,3 +3,5 @@
 # Python cache
 __pycache__/
 *.py[cod]
+*.bak
+.pytest_cache/
