@@ -135,6 +135,129 @@ data/index/faiss.index
 data/index/id_map.json
 ```
 
+### 6.4 从公开数学网站导入知识数据
+
+项目提供了批量导入脚本，用于从公开数学知识来源检索页面、清洗文本、切分 chunk、调用大语言模型整理为严格 JSON，并追加保存到原始知识库文件：
+
+```text
+data/raw/math_knowledge_seed.jsonl
+```
+
+当前优先支持的数据源：
+
+- `wikipedia`：通过 MediaWiki API 获取数学条目。
+- `wikibooks`：通过 MediaWiki API 获取数学教材章节。
+- `proofwiki`：通过 MediaWiki API 获取定义、定理、引理、证明等内容；部分网络环境可能返回 403。
+- `planetmath`：受限 HTML 抓取，稳定性取决于站点访问情况。
+
+暂不将 MathWorld、OpenStax、arXiv、Math StackExchange 作为主要批量来源，因为这些来源存在许可、API、数据使用限制或质量筛选问题，需要单独设计导入策略。
+
+示例：从 Wikipedia 和 Wikibooks 导入 `derivative` 相关内容：
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.import_math_knowledge `
+  --sources wikipedia wikibooks `
+  --keywords derivative `
+  --limit-per-source 2 `
+  --stage undergraduate `
+  --course "Calculus" `
+  --category calculus
+```
+
+Linux / macOS 可写为：
+
+```bash
+python -m scripts.import_math_knowledge \
+  --sources wikipedia wikibooks \
+  --keywords derivative \
+  --limit-per-source 2 \
+  --stage undergraduate \
+  --course "Calculus" \
+  --category calculus
+```
+
+常用参数：
+
+- `--sources`：数据源列表，可选 `proofwiki`、`planetmath`、`wikibooks`、`wikipedia`。
+- `--keywords`：搜索关键词，可传多个。
+- `--limit-per-source`：每个数据源、每个关键词最多取多少条搜索结果，默认 `3`。
+- `--max-chunk-chars`：每个 LLM chunk 的最大字符数，默认 `6000`。
+- `--delay-seconds`：页面请求间隔，默认 `1.0` 秒。
+- `--stage`：可选学段，取值为 `primary`、`junior_secondary`、`senior_secondary`、`undergraduate`。
+- `--course`：课程名提示，例如 `"Calculus"`。
+- `--category`：知识分类提示，例如 `calculus`。
+- `--output`：合格知识点输出文件，默认 `data/raw/math_knowledge_seed.jsonl`。
+- `--error-output`：不合格数据或抓取错误输出文件，默认 `data/raw/math_knowledge_import_errors.jsonl`。
+
+脚本写入 `math_knowledge_seed.jsonl` 时会严格保持原知识库 JSONL 格式，每行只包含：
+
+```text
+id, category, stage, course, title, keywords, content, example, steps, prerequisites, difficulty
+```
+
+不会把接口响应包装字段（如 `records`、`saved_count`、`next_steps`）写入知识库。
+
+导入后建议先校验原始知识库：
+
+```bash
+python -m scripts.validate_seed_jsonl
+```
+
+如果校验通过，再重新构建 chunk 和向量索引：
+
+```bash
+python -m scripts.build_kb
+python -m scripts.build_index
+```
+
+### 6.5 从本地 PDF 数据湖抽取文本
+
+如果不希望从网页抓取，可以把 PDF 文件放到：
+
+```text
+data/data_lake/
+```
+
+然后先抽取、清洗为文本 chunk 集：
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.import_pdf_knowledge `
+  --data-dir data\data_lake `
+  --text-output data\processed\pdf_text_chunks.jsonl `
+  --max-chunk-chars 3000
+```
+
+默认只生成清洗后的文本集，不调用大语言模型，也不会写入 `math_knowledge_seed.jsonl`。文本集字段包括来源 PDF 路径、PDF 标题、chunk 序号、清洗后的文本和文本长度。
+
+如果确认文本质量可以接受，再加 `--import-to-knowledge`，让模型把 PDF 文本 chunk 整理为中文知识点并追加到原始知识库：
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.import_pdf_knowledge `
+  --data-dir data\data_lake `
+  --max-chunks 20 `
+  --max-chunk-chars 3000 `
+  --import-to-knowledge `
+  --stage senior_secondary `
+  --course "高中数学" `
+  --category "高中数学"
+```
+
+常用参数：
+
+- `--data-dir`：PDF 数据湖目录，默认 `data/data_lake`。
+- `--text-output`：清洗后的 PDF 文本 chunk JSONL，默认 `data/processed/pdf_text_chunks.jsonl`。
+- `--max-chunk-chars`：每个文本 chunk 的最大字符数，默认 `4000`。
+- `--max-chunks`：最多处理多少个文本 chunk，适合先小批量试跑。
+- `--import-to-knowledge`：启用 LLM 结构化写入知识库；不加时只抽文本。
+- `--stage` / `--course` / `--category`：写入知识库时给模型的学段、课程和分类提示。
+- `--error-output`：PDF 知识点导入错误文件，默认 `data/raw/pdf_knowledge_import_errors.jsonl`。
+
+PDF 文本抽取依赖 `pypdf`。如果提示缺少依赖，请重新安装：
+
+```bash
+pip install -r requirements.txt
+```
+
 ---
 
 ## 7. 调试脚本

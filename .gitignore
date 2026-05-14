@@ -1,7 +1,13 @@
 .env
+.venv/
 
 # Python cache
 __pycache__/
 *.py[cod]
 *.bak
 .pytest_cache/
+
+# Local data/import artifacts
+data/data_lake/
+data/raw/*errors.jsonl
+data/processed/pdf_text_chunks.jsonl
