@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.chat import router as chat_router
+from app.api.knowledge import router as knowledge_router
 from app.core.config import settings
 from app.schemas.chat import HealthResponse
 
@@ -49,6 +50,7 @@ def create_app() -> FastAPI:
         return HTMLResponse(index_file.read_text(encoding="utf-8"))
 
     app.include_router(chat_router)
+    app.include_router(knowledge_router)
 
     frontend_dir = Path(__file__).resolve().parent / "frontend"
     if frontend_dir.exists():

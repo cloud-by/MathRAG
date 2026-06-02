@@ -67,9 +67,10 @@ class LLMService:
         message = choice.message
         content = (message.content or "").strip()
         reasoning_content = getattr(message, "reasoning_content", None)
+        finish_reason = getattr(choice, "finish_reason", None)
 
         if not content:
-            raise RuntimeError("模型返回内容为空")
+            raise RuntimeError("模型返回内容为空，finish_reason={finish_reason}")
 
         try:
             data = json.loads(content)
