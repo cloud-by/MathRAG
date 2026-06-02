@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Sequence
 
 from app.core.config import settings
+from app.services.agentic_rag import get_query_planner
 from app.services.llm_service import chat_json
 from app.services.retriever import retrieve
 from app.utils.prompt_builder import build_chat_messages
@@ -32,7 +33,14 @@ class RAGPipeline:
         if k <= 0:
             raise ValueError("top_k 必须大于 0")
 
-        references = retrieve(question=question, top_k=k)
+        planner = get_query_planner()
+        plan = planner.create_plan(question=question, history=history)
+
+        references = self._retrieve_with_plan(
+            question=question,
+            retrieval_queries=plan.retrieval_queries,
+            top_k=k,
+        )
         normalized_references = self._normalize_references(references)
 
         messages = build_chat_messages(
@@ -50,10 +58,67 @@ class RAGPipeline:
             "used_knowledge": parsed["used_knowledge"],
             "related_questions": parsed["related_questions"],
             "references": normalized_references,
+            "agentic_plan": {
+                "strategy": plan.strategy,
+                "retrieval_queries": plan.retrieval_queries,
+            },
         }
 
 
         return result
+
+    @staticmethod
+    def _merge_references(references: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        merged: Dict[str, Dict[str, Any]] = {}
+
+        for ref in references:
+            if not isinstance(ref, dict):
+                continue
+
+            chunk_id = str(ref.get("chunk_id", "")).strip()
+            key = chunk_id or f"index::{ref.get('index')}"
+            current_score = float(ref.get("score", 0.0) or 0.0)
+
+            existing = merged.get(key)
+            if existing is None:
+                merged[key] = dict(ref)
+                continue
+
+            existing_score = float(existing.get("score", 0.0) or 0.0)
+            if current_score > existing_score:
+                merged[key] = dict(ref)
+
+        ranked = sorted(merged.values(), key=lambda item: float(item.get("score", 0.0) or 0.0), reverse=True)
+
+        for i, ref in enumerate(ranked, start=1):
+            ref["rank"] = i
+
+        return ranked
+
+    def _retrieve_with_plan(
+        self,
+        question: str,
+        retrieval_queries: Sequence[str],
+        top_k: int,
+    ) -> List[Dict[str, Any]]:
+        queries: List[str] = []
+        seen = set()
+
+        for q in retrieval_queries:
+            text = str(q).strip()
+            if text and text not in seen:
+                queries.append(text)
+                seen.add(text)
+
+        if question not in seen:
+            queries.insert(0, question)
+
+        combined: List[Dict[str, Any]] = []
+        for q in queries:
+            combined.extend(retrieve(question=q, top_k=top_k))
+
+        merged = self._merge_references(combined)
+        return merged[:top_k]
 
     @staticmethod
     def _normalize_str_list(value: Any, default: List[str] | None = None) -> List[str]:

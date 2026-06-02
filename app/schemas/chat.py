@@ -163,6 +163,34 @@ class ReferenceItem(BaseModel):
         return value
 
 
+class AgenticPlan(BaseModel):
+    strategy: str = Field(default="", description="检索规划策略说明")
+    retrieval_queries: List[str] = Field(default_factory=list, description="规划生成的检索子问题")
+
+    @field_validator("strategy", mode="before")
+    @classmethod
+    def normalize_strategy(cls, value: Any) -> str:
+        return "" if value is None else str(value).strip()
+
+    @field_validator("retrieval_queries", mode="before")
+    @classmethod
+    def normalize_retrieval_queries(cls, value: Any) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            output: List[str] = []
+            seen = set()
+            for item in value:
+                text = str(item).strip()
+                if text and text not in seen:
+                    output.append(text)
+                    seen.add(text)
+            return output
+
+        text = str(value).strip()
+        return [text] if text else []
+
+
 class ChatResponse(BaseModel):
     question: str = Field(..., description="用户当前问题")
     answer: str = Field(..., description="最终回答")
@@ -170,6 +198,7 @@ class ChatResponse(BaseModel):
     used_knowledge: List[str] = Field(default_factory=list, description="本次实际使用到的知识点标题")
     related_questions: List[str] = Field(default_factory=list, description="推荐追问")
     references: List[ReferenceItem] = Field(default_factory=list, description="检索到的参考知识")
+    agentic_plan: Optional[AgenticPlan] = Field(default=None, description="检索规划信息")
     reasoning_content: Optional[str] = Field(default=None, description="模型额外的推理内容（可选）")
 
     @field_validator("question", "answer", mode="before")

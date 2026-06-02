@@ -5,6 +5,7 @@ const clearChatBtn = document.getElementById('clear-chat-btn');
 const topKSelect = document.getElementById('top-k-select');
 const chatHistoryEl = document.getElementById('chat-history');
 const answerBoxEl = document.getElementById('answer-box');
+const agenticPlanBoxEl = document.getElementById('agentic-plan-box');
 const referencesBoxEl = document.getElementById('references-box');
 const relatedBoxEl = document.getElementById('related-box');
 const statusTextEl = document.getElementById('status-text');
@@ -122,6 +123,39 @@ function renderAnswer(data) {
   answerBoxEl.classList.remove('empty-state');
   answerBoxEl.className = 'result-card';
   answerBoxEl.innerHTML = html;
+}
+
+function renderAgenticPlan(plan) {
+  const strategy = String(plan?.strategy ?? '').trim();
+  const queries = normalizeStringArray(plan?.retrieval_queries);
+
+  if (!strategy && queries.length === 0) {
+    agenticPlanBoxEl.className = 'result-card empty-state';
+    agenticPlanBoxEl.textContent = '这次回答未返回检索规划信息。';
+    return;
+  }
+
+  const isFallback = strategy.startsWith('规划失败');
+  const statusClass = isFallback ? 'plan-status plan-status-fallback' : 'plan-status plan-status-ok';
+  const statusText = isFallback ? '已回退' : '已规划';
+
+  let html = `
+    <div class="plan-header">
+      <span class="plan-label">规划策略</span>
+      <span class="${statusClass}">${statusText}</span>
+    </div>
+    <div class="plan-strategy">${nl2br(strategy || '（未提供）')}</div>
+  `;
+
+  if (queries.length > 0) {
+    html += '<div class="answer-block-title">检索子问题</div>';
+    html += '<ol class="answer-list">';
+    html += queries.map(item => `<li>${escapeHtml(item)}</li>`).join('');
+    html += '</ol>';
+  }
+
+  agenticPlanBoxEl.className = 'result-card';
+  agenticPlanBoxEl.innerHTML = html;
 }
 
 function buildReferenceMeta(item) {
@@ -275,6 +309,9 @@ function renderError(message) {
   answerBoxEl.className = 'result-card';
   answerBoxEl.innerHTML = `<div class="answer-main">${nl2br(message)}</div>`;
 
+  agenticPlanBoxEl.className = 'result-card empty-state';
+  agenticPlanBoxEl.textContent = '由于本次请求失败，暂无检索规划。';
+
   referencesBoxEl.className = 'stack-list empty-state';
   referencesBoxEl.textContent = '由于本次请求失败，暂无参考知识。';
 
@@ -325,6 +362,7 @@ async function sendQuestion(rawQuestion) {
     history.push({ role: 'assistant', content: answerText });
 
     renderAnswer(data);
+    renderAgenticPlan(data.agentic_plan || null);
     renderReferences(data.references || []);
     renderRelatedQuestions(data.related_questions || []);
     statusTextEl.textContent = '已完成';
@@ -375,6 +413,9 @@ clearChatBtn.addEventListener('click', () => {
 
   answerBoxEl.className = 'result-card empty-state';
   answerBoxEl.textContent = '提交问题后，这里会显示答案。';
+
+  agenticPlanBoxEl.className = 'result-card empty-state';
+  agenticPlanBoxEl.textContent = '提交问题后，这里会显示检索规划。';
 
   referencesBoxEl.className = 'stack-list empty-state';
   referencesBoxEl.textContent = '提交问题后，这里会显示参考知识。';

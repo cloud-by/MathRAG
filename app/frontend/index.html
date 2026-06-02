@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>MathRAG - 数学问答系统</title>
-  <link rel="stylesheet" href="./style.css" />
+  <link rel="stylesheet" href="./style.css?v=20260405" />
 </head>
 <body>
   <div class="page-shell">
@@ -31,6 +31,7 @@
               1. <code>x^2+4x+3=0 怎么解？</code><br />
               2. <code>平方差公式是什么？</code><br />
               3. <code>为什么这题可以因式分解？</code>
+              4. <code>导数的几何意义是什么？</code>
             </div>
           </div>
         </div>
@@ -71,6 +72,11 @@
         </section>
 
         <section class="result-section">
+          <h3>检索规划展示</h3>
+          <div id="agentic-plan-box" class="result-card empty-state">提交问题后，这里会显示检索规划。</div>
+        </section>
+
+        <section class="result-section">
           <h3>参考知识展示</h3>
           <div id="references-box" class="stack-list empty-state">提交问题后，这里会显示参考知识。</div>
         </section>
@@ -83,6 +89,6 @@
     </main>
   </div>
 
-  <script src="./app.js"></script>
+  <script src="./app.js?v=20260405"></script>
 </body>
 </html>

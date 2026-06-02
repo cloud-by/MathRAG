@@ -52,6 +52,10 @@ def build_mock_result() -> Dict[str, Any]:
         "used_knowledge": ["测试知识点1"],
         "related_questions": ["代数式和方程有什么区别？", "什么叫同类项？"],
         "references": [build_mock_reference(1), build_mock_reference(2)],
+        "agentic_plan": {
+            "strategy": "拆分核心概念并补充同义表达",
+            "retrieval_queries": ["代数式 定义", "代数式 与 方程 区别"],
+        },
         "reasoning_content": "这是测试用的推理内容。",
     }
 
@@ -88,6 +92,8 @@ def test_chat_success_returns_complete_response(monkeypatch: pytest.MonkeyPatch)
     assert len(data["related_questions"]) == 2
     assert isinstance(data["references"], list)
     assert len(data["references"]) == 2
+    assert data["agentic_plan"]["strategy"] == "拆分核心概念并补充同义表达"
+    assert data["agentic_plan"]["retrieval_queries"] == ["代数式 定义", "代数式 与 方程 区别"]
 
     ref = data["references"][0]
     assert ref["chunk_id"] == "k0001_chunk_0"

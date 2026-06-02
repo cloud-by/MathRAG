@@ -286,6 +286,46 @@ body {
   line-height: 1.7;
 }
 
+.plan-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.plan-label {
+  font-weight: 700;
+}
+
+.plan-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.plan-status-ok {
+  background: #ecfeff;
+  color: #0f766e;
+  border-color: #99f6e4;
+}
+
+.plan-status-fallback {
+  background: #fff7ed;
+  color: #c2410c;
+  border-color: #fed7aa;
+}
+
+.plan-strategy {
+  margin-top: 10px;
+  line-height: 1.65;
+  color: var(--text);
+}
+
 .answer-tags {
   display: flex;
   flex-wrap: wrap;
