@@ -142,8 +142,6 @@ def import_pdf_knowledge(
     max_chunks: int | None = None,
     extract_only: bool = True,
     append_text_output: bool = False,
-    stage: str | None = None,
-    course: str | None = None,
     category: str | None = None,
 ) -> PDFExtractResult:
     documents = load_pdf_documents(data_dir=data_dir, recursive=recursive)
@@ -158,8 +156,6 @@ def import_pdf_knowledge(
                     chunk=chunk,
                     output_path=output_path,
                     error_path=error_path,
-                    stage=stage,
-                    course=course,
                     category=category,
                 )
             )

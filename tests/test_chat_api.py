@@ -19,23 +19,18 @@ def build_mock_reference(rank: int = 1) -> Dict[str, Any]:
         "chunk_id": f"k000{rank}_chunk_0",
         "source_id": f"k000{rank}",
         "category": "concept",
-        "stage": "junior_secondary",
-        "course": "初中代数",
         "title": f"测试知识点{rank}",
         "keywords": ["代数式", "表达式", "字母表示数"],
         "content": "这是一个用于测试的知识点内容。",
         "example": "例如 3x+2 是一个代数式。",
         "steps": ["步骤1：识别结构", "步骤2：理解含义"],
-        "prerequisites": ["用字母表示数"],
         "difficulty": "easy",
         "answer_context": "【测试知识点】\n这是一个用于回答的上下文。",
-        "retrieval_text": "学段：初中\n课程：初中代数\n标题：测试知识点",
+        "retrieval_text": "类别：concept\n标题：测试知识点",
         "source_line": rank,
         "metadata": {
             "source_file": "math_knowledge_seed.jsonl",
             "chunk_index": 0,
-            "stage": "junior_secondary",
-            "course": "初中代数",
             "difficulty": "easy",
         },
     }
@@ -99,13 +94,10 @@ def test_chat_success_returns_complete_response(monkeypatch: pytest.MonkeyPatch)
     assert ref["chunk_id"] == "k0001_chunk_0"
     assert ref["source_id"] == "k0001"
     assert ref["category"] == "concept"
-    assert ref["stage"] == "junior_secondary"
-    assert ref["course"] == "初中代数"
     assert ref["title"] == "测试知识点1"
     assert ref["difficulty"] == "easy"
     assert ref["keywords"] == ["代数式", "表达式", "字母表示数"]
     assert ref["steps"] == ["步骤1：识别结构", "步骤2：理解含义"]
-    assert ref["prerequisites"] == ["用字母表示数"]
     assert "reasoning_content" in data
 
 
@@ -236,14 +228,11 @@ def test_chat_response_reference_schema_is_complete(monkeypatch: pytest.MonkeyPa
         "chunk_id",
         "source_id",
         "category",
-        "stage",
-        "course",
         "title",
         "keywords",
         "content",
         "example",
         "steps",
-        "prerequisites",
         "difficulty",
         "answer_context",
         "retrieval_text",

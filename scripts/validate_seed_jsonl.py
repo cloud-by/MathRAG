@@ -33,13 +33,11 @@ def record_chinese_ratio(record: KnowledgeRecord) -> float:
     text = " ".join(
         [
             record.category,
-            record.course,
             record.title,
             " ".join(record.keywords),
             record.content,
             record.example,
             " ".join(record.steps),
-            " ".join(record.prerequisites),
         ]
     )
     return chinese_ratio(text)

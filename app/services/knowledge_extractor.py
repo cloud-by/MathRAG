@@ -11,23 +11,7 @@ from app.services.llm_service import chat_json
 
 
 DEFAULT_KNOWLEDGE_PATH = settings.RAW_KB_PATH
-VALID_STAGES = {"primary", "junior_secondary", "senior_secondary", "undergraduate"}
 VALID_DIFFICULTIES = {"easy", "medium", "hard"}
-
-
-STAGE_ALIASES = {
-    "小学": "primary",
-    "primary": "primary",
-    "初中": "junior_secondary",
-    "junior": "junior_secondary",
-    "junior_secondary": "junior_secondary",
-    "高中": "senior_secondary",
-    "senior": "senior_secondary",
-    "senior_secondary": "senior_secondary",
-    "大学": "undergraduate",
-    "本科": "undergraduate",
-    "undergraduate": "undergraduate",
-}
 
 
 DIFFICULTY_ALIASES = {
@@ -85,12 +69,6 @@ def _normalize_category(value: Any) -> str:
     return text or "concept"
 
 
-def _normalize_stage(value: Any, default: str | None = None) -> str:
-    text = _normalize_text(value or default).lower().replace("-", "_").replace(" ", "_")
-    text = STAGE_ALIASES.get(text, text)
-    return text if text in VALID_STAGES else "junior_secondary"
-
-
 def _normalize_difficulty(value: Any) -> str:
     text = _normalize_text(value).lower().replace("-", "_").replace(" ", "_")
     text = DIFFICULTY_ALIASES.get(text, text)
@@ -132,13 +110,9 @@ def generate_next_ids(count: int, path: Path = DEFAULT_KNOWLEDGE_PATH) -> List[s
 
 def _build_messages(
     text: str,
-    stage: str | None = None,
-    course: str | None = None,
     category: str | None = None,
 ) -> List[Dict[str, str]]:
     hints = {
-        "stage": stage,
-        "course": course,
         "category": category,
     }
 
@@ -148,6 +122,8 @@ def _build_messages(
             "content": (
                 "你是数学教材知识库编辑。请从教材片段中抽取可以独立检索和用于答疑的知识点，"
                 "并只返回 JSON 对象。不要输出 markdown。"
+                "涉及数学公式时，必须使用 KaTeX 可渲染的 LaTeX：行内公式用 \\( ... \\)，"
+                "块级公式用 \\[ ... \\]，不要新增 $...$ 或 $$...$$。"
             ),
         },
         {
@@ -159,14 +135,11 @@ def _build_messages(
                 '  "items": [\n'
                 "    {\n"
                 '      "category": "知识分类，优先用简短中文或 snake_case",\n'
-                '      "stage": "primary|junior_secondary|senior_secondary|undergraduate",\n'
-                '      "course": "课程名",\n'
                 '      "title": "知识点标题",\n'
                 '      "keywords": ["关键词1", "关键词2"],\n'
                 '      "content": "用完整句子解释核心知识点",\n'
                 '      "example": "来自片段或自造的简短例子，没有则为空字符串",\n'
                 '      "steps": ["理解或解题步骤1", "理解或解题步骤2"],\n'
-                '      "prerequisites": ["前置知识1"],\n'
                 '      "difficulty": "easy|medium|hard"\n'
                 "    }\n"
                 "  ]\n"
@@ -175,7 +148,11 @@ def _build_messages(
                 "1. 每个 item 只表达一个清晰知识点。\n"
                 "2. content 不要照抄大段原文，要提炼成适合问答系统使用的解释。\n"
                 "3. keywords 和 steps 不能为空。\n"
-                "4. 如果提示信息中提供 stage/course/category，优先沿用。\n\n"
+                "4. 如果提示信息中提供 category，优先沿用。\n"
+                "5. content、example、steps 中如包含数学公式，必须统一为 KaTeX LaTeX 分隔符："
+                "行内公式用 \\( ... \\)，块级公式用 \\[ ... \\]；不要新增 $...$ 或 $$...$$。\n"
+                "6. 字符串字段内部不要包含原始换行，不要把公式逐字符、逐行拆开。\n"
+                "7. 输出必须是可被 json.loads 解析的合法 JSON。\n\n"
                 f"提示信息：{json.dumps(hints, ensure_ascii=False)}\n\n"
                 f"教材片段：\n{text}"
             ),
@@ -187,14 +164,11 @@ def _normalize_raw_item(raw: Dict[str, Any], item_id: str, hints: Dict[str, str 
     record = {
         "id": item_id,
         "category": _normalize_category(raw.get("category") or hints.get("category")),
-        "stage": _normalize_stage(raw.get("stage"), hints.get("stage")),
-        "course": _normalize_text(raw.get("course") or hints.get("course")),
         "title": _normalize_text(raw.get("title")),
         "keywords": _normalize_list(raw.get("keywords")),
         "content": _normalize_text(raw.get("content")),
         "example": _normalize_text(raw.get("example")),
         "steps": _normalize_list(raw.get("steps")),
-        "prerequisites": _normalize_list(raw.get("prerequisites")),
         "difficulty": _normalize_difficulty(raw.get("difficulty")),
     }
     return KnowledgeRecord(**record)
@@ -202,8 +176,6 @@ def _normalize_raw_item(raw: Dict[str, Any], item_id: str, hints: Dict[str, str 
 
 def extract_knowledge_records(
     text: str,
-    stage: str | None = None,
-    course: str | None = None,
     category: str | None = None,
     knowledge_path: Path = DEFAULT_KNOWLEDGE_PATH,
 ) -> List[KnowledgeRecord]:
@@ -212,7 +184,7 @@ def extract_knowledge_records(
         raise ValueError("text cannot be empty")
 
     result = chat_json(
-        messages=_build_messages(text=text, stage=stage, course=course, category=category),
+        messages=_build_messages(text=text, category=category),
         temperature=0.1,
     )
     items = result.data.get("items")
@@ -220,7 +192,7 @@ def extract_knowledge_records(
         raise ValueError("model response must contain a non-empty items list")
 
     next_ids = generate_next_ids(len(items), knowledge_path)
-    hints = {"stage": stage, "course": course, "category": category}
+    hints = {"category": category}
     records: List[KnowledgeRecord] = []
 
     for index, raw in enumerate(items):

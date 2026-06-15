@@ -49,13 +49,6 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="After extracting text chunks, call the LLM and append validated Chinese seed records.",
     )
-    parser.add_argument(
-        "--stage",
-        choices=["primary", "junior_secondary", "senior_secondary", "undergraduate"],
-        default=None,
-        help="Optional stage override for generated records.",
-    )
-    parser.add_argument("--course", default=None, help="Optional course hint, for example 高中数学.")
     parser.add_argument("--category", default=None, help="Optional category hint, for example 函数.")
     return parser.parse_args()
 
@@ -72,8 +65,6 @@ def main() -> None:
         max_chunks=args.max_chunks,
         extract_only=not args.import_to_knowledge,
         append_text_output=args.append_text_output,
-        stage=args.stage,
-        course=args.course,
         category=args.category,
     )
 

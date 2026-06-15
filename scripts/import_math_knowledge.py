@@ -42,13 +42,6 @@ def parse_args() -> argparse.Namespace:
         default=settings.RAW_DATA_DIR / "math_knowledge_import_errors.jsonl",
         help="Invalid LLM outputs and transform errors are appended here.",
     )
-    parser.add_argument(
-        "--stage",
-        choices=["primary", "junior_secondary", "senior_secondary", "undergraduate"],
-        default=None,
-        help="Optional stage override for generated records.",
-    )
-    parser.add_argument("--course", default=None, help="Optional course hint.")
     parser.add_argument("--category", default=None, help="Optional category hint.")
     parser.add_argument("--max-chunk-chars", type=int, default=6000, help="Maximum cleaned text chars per LLM chunk.")
     parser.add_argument("--delay-seconds", type=float, default=1.0, help="Delay between source requests.")
@@ -63,8 +56,6 @@ def main() -> None:
         limit_per_source=args.limit_per_source,
         output_path=args.output,
         error_path=args.error_output,
-        stage=args.stage,
-        course=args.course,
         category=args.category,
         max_chunk_chars=args.max_chunk_chars,
         delay_seconds=args.delay_seconds,

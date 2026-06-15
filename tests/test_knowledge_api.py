@@ -15,14 +15,11 @@ def build_record(item_id: str = "k9999") -> KnowledgeRecord:
     return KnowledgeRecord(
         id=item_id,
         category="函数",
-        stage="junior_secondary",
-        course="初中数学",
         title="一次函数的概念",
         keywords=["一次函数", "函数", "正比例函数"],
         content="一次函数通常形如 y=kx+b，其中 k 不等于 0，表示两个变量之间的线性关系。",
         example="例如 y=2x+3 是一次函数。",
         steps=["识别表达式是否为 y=kx+b 的形式", "检查 k 是否不等于 0"],
-        prerequisites=["变量", "代数式"],
         difficulty="easy",
     )
 
@@ -30,10 +27,9 @@ def build_record(item_id: str = "k9999") -> KnowledgeRecord:
 def test_extract_knowledge_saves_records(monkeypatch) -> None:
     records = [build_record()]
 
-    def mock_extract_knowledge_records(text: str, stage: str | None = None, course: str | None = None, category: str | None = None) -> List[KnowledgeRecord]:
+    def mock_extract_knowledge_records(text: str, category: str | None = None) -> List[KnowledgeRecord]:
         assert text == "一次函数一般形如 y=kx+b。"
-        assert stage == "junior_secondary"
-        assert course == "初中数学"
+        assert category == "函数"
         return records
 
     def mock_append_records(items) -> int:
@@ -47,8 +43,7 @@ def test_extract_knowledge_saves_records(monkeypatch) -> None:
         "/api/knowledge/extract",
         json={
             "text": "一次函数一般形如 y=kx+b。",
-            "stage": "junior_secondary",
-            "course": "初中数学",
+            "category": "函数",
             "save": True,
         },
     )
@@ -65,7 +60,7 @@ def test_extract_knowledge_can_preview_without_saving(monkeypatch) -> None:
     records = [build_record()]
     append_called = False
 
-    def mock_extract_knowledge_records(text: str, stage: str | None = None, course: str | None = None, category: str | None = None) -> List[KnowledgeRecord]:
+    def mock_extract_knowledge_records(text: str, category: str | None = None) -> List[KnowledgeRecord]:
         return records
 
     def mock_append_records(items) -> int:

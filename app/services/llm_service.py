@@ -11,8 +11,107 @@ from openai.types.chat import ChatCompletionMessageParam
 from app.core.config import settings
 
 
+VALID_JSON_ESCAPE_CHARS = {'"', "\\", "/", "b", "f", "n", "r", "t", "u"}
+
+
 def _get_setting(name: str, default: Any = None) -> Any:
     return getattr(settings, name, os.getenv(name, default))
+
+
+def _repair_json_string_escapes(content: str) -> str:
+    """Repair common invalid JSON emitted when LLM strings contain LaTeX."""
+
+    output: list[str] = []
+    in_string = False
+    i = 0
+
+    while i < len(content):
+        ch = content[i]
+
+        if not in_string:
+            output.append(ch)
+            if ch == '"':
+                in_string = True
+            i += 1
+            continue
+
+        if ch == '"':
+            output.append(ch)
+            in_string = False
+            i += 1
+            continue
+
+        if ch == "\\":
+            if i + 1 >= len(content):
+                output.append("\\\\")
+                i += 1
+                continue
+
+            next_ch = content[i + 1]
+            next_next_ch = content[i + 2] if i + 2 < len(content) else ""
+            if next_ch in {"b", "f", "n", "r", "t"} and next_next_ch.isalpha():
+                # JSON would treat \frac, \tan, \theta, \nabla, \bar as
+                # control-character escapes. They are almost certainly LaTeX.
+                output.append("\\\\")
+                output.append(next_ch)
+                i += 2
+                continue
+
+            if next_ch in VALID_JSON_ESCAPE_CHARS:
+                output.append(ch)
+                output.append(next_ch)
+            else:
+                # JSON does not allow escapes like \(, \[, \frac, \sin.
+                # Preserve the intended LaTeX by escaping the backslash itself.
+                output.append("\\\\")
+                output.append(next_ch)
+            i += 2
+            continue
+
+        if ch == "\n":
+            output.append("\\n")
+            i += 1
+            continue
+
+        if ch == "\r":
+            output.append("\\n")
+            if i + 1 < len(content) and content[i + 1] == "\n":
+                i += 2
+            else:
+                i += 1
+            continue
+
+        if ch == "\t":
+            output.append("\\t")
+            i += 1
+            continue
+
+        if ord(ch) < 0x20:
+            output.append(" ")
+            i += 1
+            continue
+
+        output.append(ch)
+        i += 1
+
+    return "".join(output)
+
+
+def _loads_llm_json(content: str) -> dict[str, Any]:
+    repaired = _repair_json_string_escapes(content)
+
+    if repaired != content:
+        try:
+            data = json.loads(repaired)
+        except json.JSONDecodeError:
+            data = json.loads(content)
+    else:
+        data = json.loads(content)
+
+    if not isinstance(data, dict):
+        raise ValueError("模型返回的 JSON 不是对象")
+
+    return data
 
 
 @dataclass
@@ -73,12 +172,9 @@ class LLMService:
             raise RuntimeError("模型返回内容为空，finish_reason={finish_reason}")
 
         try:
-            data = json.loads(content)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"模型未返回合法 JSON：{content[:300]}") from exc
-
-        if not isinstance(data, dict):
-            raise ValueError("模型返回的 JSON 不是对象")
+            data = _loads_llm_json(content)
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise ValueError(f"模型未返回合法 JSON：{content[:800]}") from exc
 
         return LLMResponse(
             content=content,

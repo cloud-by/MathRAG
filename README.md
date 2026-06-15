@@ -1,79 +1,114 @@
 # MathRAG
 
-基于 **FastAPI + FAISS + Embedding API + DeepSeek(OpenAI 兼容) API** 的数学问答 RAG 原型系统。
+MathRAG 是一个面向数学问答场景的 RAG 原型系统，基于 **FastAPI + FAISS + OpenAI-Compatible Embedding API + DeepSeek/OpenAI-Compatible Chat API** 构建。
 
-该项目面向“数学助教/教学演示”场景：
-- 先从结构化知识库中召回相关知识；
-- 再由大模型生成结构化回答（答案、步骤、参考知识、追问建议）；
-- 同时提供可直接访问的浏览器前端页面与 API。
+系统会先从本地结构化数学知识库中检索相关知识，再让大模型生成结构化回答，并通过浏览器前端展示答案、步骤、参考知识、检索规划和可继续追问的问题。
 
 ---
 
-## 1. 核心能力
+## 功能概览
 
-- 数学问答（RAG 检索增强）
-- FAISS 向量检索（支持内积检索）
-- 结构化回答输出（`answer` / `steps` / `references` / `related_questions`）
-- 简单多轮对话历史输入（`history`）
-- FastAPI 后端 + 原生前端静态页面
-- Docker / Docker Compose 部署支持
-- 基于 `pytest` 的 API 测试样例
+- **数学 RAG 问答**：`/api/chat` 提供检索增强问答。
+- **Agentic 检索规划**：先由 LLM 将用户问题改写为 1~4 条检索子问题，再合并检索结果。
+- **FAISS 向量检索**：支持内积/IP 与 L2 两种索引度量方式。
+- **结构化知识库**：JSONL 种子知识 -> chunk -> FAISS 索引与 `id_map`。
+- **知识抽取**：支持从文本、公开网页源、本地 PDF 抽取并追加知识点。
+- **公式渲染**：前端通过 KaTeX 渲染 `\(...\)` 与 `\[...\]` 公式。
+- **LLM JSON 修复**：对模型输出中常见 LaTeX 反斜杠转义问题做容错修复。
+- **Docker 部署**：提供 `Dockerfile` 与 `docker-compose.yml`。
+- **测试覆盖**：提供 API、RAG、导入器相关 pytest 用例。
 
 ---
 
-## 2. 项目结构
+## 项目结构
 
 ```text
 MathRAG/
-├─ app/
-│  ├─ api/                # 路由层
-│  ├─ core/               # 配置与日志
-│  ├─ frontend/           # 前端静态页面
-│  ├─ schemas/            # 请求/响应模型
-│  ├─ services/           # embedding/retriever/llm/rag 主逻辑
-│  └─ utils/              # 文本清洗、提示词构建、后处理
-├─ data/
-│  ├─ raw/                # 原始知识库
-│  ├─ processed/          # chunk 化后的知识数据
-│  └─ index/              # FAISS 索引与映射
-├─ scripts/               # 构建知识库、构建索引、检索与RAG调试脚本
-├─ tests/                 # API 测试
-├─ Dockerfile
-├─ docker-compose.yml
-├─ requirements.txt
-├─ run.py
-└─ README.md
+├── app/
+│   ├── api/                  # FastAPI 路由：chat / knowledge
+│   ├── core/                 # 配置、日志
+│   ├── frontend/             # 原生 HTML/CSS/JS 前端，含 KaTeX 渲染
+│   ├── schemas/              # Pydantic 请求/响应模型
+│   ├── services/             # embedding、retriever、LLM、RAG、导入器
+│   └── utils/                # Prompt 构建、文本清洗、数学后处理
+├── data/
+│   ├── raw/                  # 原始知识库 JSONL
+│   ├── processed/            # 预处理后的 chunk JSONL
+│   └── index/                # FAISS 索引与 id_map
+├── scripts/                  # 构建、导入、验证、调试脚本
+├── tests/                    # pytest 测试
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── run.py
+└── README.md
+```
+
+核心数据流：
+
+```mermaid
+flowchart LR
+  A["data/raw/math_knowledge_seed.jsonl"] --> B["scripts.build_kb"]
+  B --> C["data/processed/kb_chunks.jsonl"]
+  C --> D["scripts.build_index"]
+  D --> E["data/index/faiss.index"]
+  D --> F["data/index/id_map.json"]
+  Q["用户问题"] --> P["LLM 检索规划"]
+  P --> R["FAISS 检索"]
+  E --> R
+  F --> R
+  R --> L["LLM 生成结构化答案"]
+  L --> U["Web 前端 / API 响应"]
 ```
 
 ---
 
-## 3. 环境要求
+## 环境要求
 
-推荐：
-- Python 3.11
-- Linux / macOS / Windows
-- 可用的 Embedding API Key
-- 可用的 DeepSeek API Key（OpenAI 兼容接口）
+推荐环境：
 
-> 说明：项目中包含 `faiss-cpu`，在不同平台下安装可能稍有差异。优先使用 Python 3.11 + 虚拟环境。
+- Python 3.11+
+- 可用的 OpenAI-Compatible Embedding API
+- 可用的 DeepSeek 或 OpenAI-Compatible Chat API
+- 如需 Docker 部署：Docker / Docker Compose
 
----
-
-## 4. 安装
-
-### 4.1 本地安装
+安装依赖：
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # Windows: .\.venv\Scripts\activate
+```
+
+Windows PowerShell：
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+Linux / macOS：
+
+```bash
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
 ---
 
-## 5. 配置 `.env`
+## 配置 `.env`
 
-在项目根目录创建 `.env` 文件：
+可以从示例文件复制：
+
+```bash
+cp .env.example .env
+```
+
+Windows PowerShell：
+
+```powershell
+Copy-Item .env.example .env
+```
+
+示例配置：
 
 ```env
 # App
@@ -82,8 +117,8 @@ APP_HOST=127.0.0.1
 APP_PORT=8000
 DEBUG=true
 
-# Embedding
-EMBEDDING_API_KEY=your_embedding_api_key
+# Embedding，要求兼容 OpenAI embeddings 接口
+EMBEDDING_API_KEY=sk-xxxx
 EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 EMBEDDING_MODEL=text-embedding-v4
 EMBEDDING_DIMENSIONS=1024
@@ -91,11 +126,11 @@ EMBEDDING_BATCH_SIZE=10
 EMBEDDING_TIMEOUT=60
 EMBEDDING_NORMALIZE=true
 
-# LLM (DeepSeek OpenAI-Compatible)
-LLM_API_KEY=your_deepseek_api_key
+# LLM，要求兼容 OpenAI chat.completions 接口
+LLM_API_KEY=sk-xxxx
 LLM_BASE_URL=https://api.deepseek.com
 LLM_MODEL=deepseek-reasoner
-LLM_TIMEOUT=120
+LLM_TIMEOUT=600
 LLM_MAX_TOKENS=2048
 LLM_TEMPERATURE=0.2
 LLM_RETURN_REASONING=false
@@ -105,164 +140,299 @@ TOP_K=3
 USE_INNER_PRODUCT=true
 ```
 
+说明：
+
+- `EMBEDDING_DIMENSIONS` 必须与实际 embedding 模型返回维度一致。
+- `scripts.build_index` 默认用 `--metric ip` 构建内积索引；如需 L2，可显式传 `--metric l2`。
+- `/api/chat` 响应模型保留 `reasoning_content` 字段，当前通常返回 `null`。
+
 ---
 
-## 6. 数据准备与索引构建
+## 快速启动
 
-### 6.1 原始知识数据位置
+如果 `data/index/faiss.index`、`data/index/id_map.json`、`data/processed/kb_chunks.jsonl` 已存在且与当前 embedding 配置匹配，可以直接启动：
+
+```bash
+python run.py
+```
+
+或使用开发模式：
+
+```bash
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+访问：
+
+- 首页：<http://127.0.0.1:8000/>
+- Swagger：<http://127.0.0.1:8000/docs>
+- 健康检查：<http://127.0.0.1:8000/health>
+
+---
+
+## 知识库格式
+
+原始知识库文件：
 
 ```text
 data/raw/math_knowledge_seed.jsonl
 ```
 
-### 6.2 构建知识 chunk
+每一行是一个 JSON 对象，字段顺序固定为：
+
+```text
+id, category, title, keywords, content, example, steps, difficulty
+```
+
+示例：
+
+```json
+{"id":"k0001","category":"quadratic_equation","title":"因式分解法解一元二次方程","keywords":["一元二次方程","因式分解"],"content":"当方程可以写成 \\(ab=0\\) 的形式时，可令每个因式分别为 0 来求解。","example":"解方程 \\(x^2+4x+3=0\\)。","steps":["把方程因式分解为 \\((x+1)(x+3)=0\\)。","分别令 \\(x+1=0\\)、\\(x+3=0\\)。","得到 \\(x=-1\\) 或 \\(x=-3\\)。"],"difficulty":"easy"}
+```
+
+字段说明：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `id` | string | 知识点 ID，格式如 `k0001` |
+| `category` | string | 分类，建议使用中文或 snake_case |
+| `title` | string | 知识点标题 |
+| `keywords` | string[] | 关键词，不能为空 |
+| `content` | string | 核心知识内容，不能为空 |
+| `example` | string | 示例，可为空字符串 |
+| `steps` | string[] | 理解或解题步骤，不能为空 |
+| `difficulty` | string | `easy` / `medium` / `hard` |
+
+当前新版 schema **不再使用** `stage`、`course`、`prerequisites`。
+
+公式规范：
+
+- 行内公式：`\(...\)`
+- 块级公式：`\[...\]`
+- 不建议继续新增 `$...$` 或 `$$...$$`
+
+---
+
+## 构建知识库与索引
+
+### 1. 校验种子知识库
+
+```bash
+python -m scripts.validate_seed_jsonl
+```
+
+指定输入和错误输出：
+
+```bash
+python -m scripts.validate_seed_jsonl \
+  --input data/raw/math_knowledge_seed.jsonl \
+  --error-output data/raw/seed_validate_errors.jsonl
+```
+
+### 2. 构建 chunk
 
 ```bash
 python -m scripts.build_kb
 ```
 
-### 6.3 构建向量索引
+自定义路径：
+
+```bash
+python -m scripts.build_kb \
+  --input data/raw/math_knowledge_seed.jsonl \
+  --output data/processed/kb_chunks.jsonl
+```
+
+生成字段包括：
+
+- `chunk_id`
+- `source_id`
+- `category`
+- `title`
+- `keywords`
+- `content`
+- `example`
+- `steps`
+- `difficulty`
+- `source_line`
+- `retrieval_text`
+- `answer_context`
+- `metadata`
+
+### 3. 构建 FAISS 索引
 
 ```bash
 python -m scripts.build_index
 ```
 
-成功后会生成：
+自定义路径和度量方式：
+
+```bash
+python -m scripts.build_index \
+  --input data/processed/kb_chunks.jsonl \
+  --index-output data/index/faiss.index \
+  --id-map-output data/index/id_map.json \
+  --metric ip
+```
+
+`--metric` 可选：
+
+- `ip`：内积，默认
+- `l2`：欧氏距离
+
+生成：
 
 ```text
-data/processed/kb_chunks.jsonl
 data/index/faiss.index
 data/index/id_map.json
 ```
 
-### 6.4 从公开数学网站导入知识数据
+---
 
-项目提供了批量导入脚本，用于从公开数学知识来源检索页面、清洗文本、切分 chunk、调用大语言模型整理为严格 JSON，并追加保存到原始知识库文件：
+## 知识导入
+
+### 从文本片段抽取知识点 API
+
+接口：`POST /api/knowledge/extract`
+
+请求示例：
+
+```json
+{
+  "text": "一元二次方程 x^2+4x+3=0 可以分解为 (x+1)(x+3)=0。",
+  "category": "quadratic_equation",
+  "save": true
+}
+```
+
+响应会返回抽取出的 `records`。当 `save=true` 时，记录会追加到：
 
 ```text
 data/raw/math_knowledge_seed.jsonl
 ```
 
-当前优先支持的数据源：
+追加后需要重新执行：
 
-- `wikipedia`：通过 MediaWiki API 获取数学条目。
-- `wikibooks`：通过 MediaWiki API 获取数学教材章节。
-- `proofwiki`：通过 MediaWiki API 获取定义、定理、引理、证明等内容；部分网络环境可能返回 403。
-- `planetmath`：受限 HTML 抓取，稳定性取决于站点访问情况。
-
-暂不将 MathWorld、OpenStax、arXiv、Math StackExchange 作为主要批量来源，因为这些来源存在许可、API、数据使用限制或质量筛选问题，需要单独设计导入策略。
-
-示例：从 Wikipedia 和 Wikibooks 导入 `derivative` 相关内容：
-
-```powershell
-.\.venv\Scripts\python.exe -m scripts.import_math_knowledge `
-  --sources wikipedia wikibooks `
-  --keywords derivative `
-  --limit-per-source 2 `
-  --stage undergraduate `
-  --course "Calculus" `
-  --category calculus
+```bash
+python -m scripts.validate_seed_jsonl
+python -m scripts.build_kb
+python -m scripts.build_index
 ```
 
-Linux / macOS 可写为：
+### 从公开数学站点导入
 
 ```bash
 python -m scripts.import_math_knowledge \
   --sources wikipedia wikibooks \
   --keywords derivative \
   --limit-per-source 2 \
-  --stage undergraduate \
-  --course "Calculus" \
   --category calculus
 ```
 
 常用参数：
 
-- `--sources`：数据源列表，可选 `proofwiki`、`planetmath`、`wikibooks`、`wikipedia`。
-- `--keywords`：搜索关键词，可传多个。
-- `--limit-per-source`：每个数据源、每个关键词最多取多少条搜索结果，默认 `3`。
-- `--max-chunk-chars`：每个 LLM chunk 的最大字符数，默认 `6000`。
-- `--delay-seconds`：页面请求间隔，默认 `1.0` 秒。
-- `--stage`：可选学段，取值为 `primary`、`junior_secondary`、`senior_secondary`、`undergraduate`。
-- `--course`：课程名提示，例如 `"Calculus"`。
-- `--category`：知识分类提示，例如 `calculus`。
-- `--output`：合格知识点输出文件，默认 `data/raw/math_knowledge_seed.jsonl`。
-- `--error-output`：不合格数据或抓取错误输出文件，默认 `data/raw/math_knowledge_import_errors.jsonl`。
+| 参数 | 说明 |
+|---|---|
+| `--sources` | 数据源，可选 `proofwiki`、`planetmath`、`wikibooks`、`wikipedia` |
+| `--keywords` | 搜索关键词，可传多个 |
+| `--limit-per-source` | 每个数据源、每个关键词最多取多少条结果，默认 `3` |
+| `--output` | 输出 JSONL，默认 `data/raw/math_knowledge_seed.jsonl` |
+| `--error-output` | 错误输出 JSONL，默认 `data/raw/math_knowledge_import_errors.jsonl` |
+| `--category` | 分类提示 |
+| `--max-chunk-chars` | 每个 LLM chunk 最大字符数，默认 `6000` |
+| `--delay-seconds` | 页面请求间隔，默认 `1.0` 秒 |
 
-脚本写入 `math_knowledge_seed.jsonl` 时会严格保持原知识库 JSONL 格式，每行只包含：
+### 从本地 PDF 导入
+
+把 PDF 放入：
 
 ```text
-id, category, stage, course, title, keywords, content, example, steps, prerequisites, difficulty
+data/data_lake/
 ```
 
-不会把接口响应包装字段（如 `records`、`saved_count`、`next_steps`）写入知识库。
-
-导入后建议先校验原始知识库：
+仅抽取清洗后的文本 chunk：
 
 ```bash
-python -m scripts.validate_seed_jsonl
+python -m scripts.import_pdf_knowledge \
+  --data-dir data/data_lake \
+  --text-output data/processed/pdf_text_chunks.jsonl \
+  --max-chunk-chars 3000
 ```
 
-如果校验通过，再重新构建 chunk 和向量索引：
+抽取文本并调用 LLM 结构化写入知识库：
+
+```bash
+python -m scripts.import_pdf_knowledge \
+  --data-dir data/data_lake \
+  --max-chunks 20 \
+  --max-chunk-chars 3000 \
+  --import-to-knowledge \
+  --category "高中数学"
+```
+
+常用参数：
+
+| 参数 | 说明 |
+|---|---|
+| `--data-dir` | PDF 目录，默认 `data/data_lake` |
+| `--text-output` | 清洗后的 PDF 文本 chunk JSONL |
+| `--output` | 使用 `--import-to-knowledge` 时写入的种子知识库 |
+| `--error-output` | PDF 导入错误输出 |
+| `--no-recursive` | 不递归扫描子目录 |
+| `--append-text-output` | 追加写入文本 chunk，不覆盖 |
+| `--max-chunk-chars` | 每个文本 chunk 最大字符数，默认 `4000` |
+| `--max-chunks` | 最多处理多少个 chunk，适合小批量试跑 |
+| `--import-to-knowledge` | 启用 LLM 结构化导入 |
+| `--category` | 分类提示 |
+
+---
+
+## 公式与 LaTeX 处理
+
+项目统一推荐使用 KaTeX 分隔符：
+
+- 行内：`\(...\)`
+- 块级：`\[...\]`
+
+如果旧数据中有 `$...$` 或 `$$...$$`，可以先 dry-run：
+
+```bash
+python -m scripts.normalize_latex_delimiters
+```
+
+确认后写回并自动备份：
+
+```bash
+python -m scripts.normalize_latex_delimiters --write
+```
+
+指定输入/输出：
+
+```bash
+python -m scripts.normalize_latex_delimiters \
+  --input data/raw/math_knowledge_seed.jsonl \
+  --output data/raw/math_knowledge_seed.normalized.jsonl \
+  --write
+```
+
+如果只调整了 `kb_chunks.jsonl` 中的元数据，且 chunk 数量与顺序没有变化，可仅重建 `id_map.json`：
+
+```bash
+python -m scripts.rebuild_id_map_from_chunks
+```
+
+如果 chunk 数量、顺序或 `retrieval_text` 发生变化，应重新执行完整索引构建：
 
 ```bash
 python -m scripts.build_kb
 python -m scripts.build_index
 ```
 
-### 6.5 从本地 PDF 数据湖抽取文本
-
-如果不希望从网页抓取，可以把 PDF 文件放到：
-
-```text
-data/data_lake/
-```
-
-然后先抽取、清洗为文本 chunk 集：
-
-```powershell
-.\.venv\Scripts\python.exe -m scripts.import_pdf_knowledge `
-  --data-dir data\data_lake `
-  --text-output data\processed\pdf_text_chunks.jsonl `
-  --max-chunk-chars 3000
-```
-
-默认只生成清洗后的文本集，不调用大语言模型，也不会写入 `math_knowledge_seed.jsonl`。文本集字段包括来源 PDF 路径、PDF 标题、chunk 序号、清洗后的文本和文本长度。
-
-如果确认文本质量可以接受，再加 `--import-to-knowledge`，让模型把 PDF 文本 chunk 整理为中文知识点并追加到原始知识库：
-
-```powershell
-.\.venv\Scripts\python.exe -m scripts.import_pdf_knowledge `
-  --data-dir data\data_lake `
-  --max-chunks 20 `
-  --max-chunk-chars 3000 `
-  --import-to-knowledge `
-  --stage senior_secondary `
-  --course "高中数学" `
-  --category "高中数学"
-```
-
-常用参数：
-
-- `--data-dir`：PDF 数据湖目录，默认 `data/data_lake`。
-- `--text-output`：清洗后的 PDF 文本 chunk JSONL，默认 `data/processed/pdf_text_chunks.jsonl`。
-- `--max-chunk-chars`：每个文本 chunk 的最大字符数，默认 `4000`。
-- `--max-chunks`：最多处理多少个文本 chunk，适合先小批量试跑。
-- `--import-to-knowledge`：启用 LLM 结构化写入知识库；不加时只抽文本。
-- `--stage` / `--course` / `--category`：写入知识库时给模型的学段、课程和分类提示。
-- `--error-output`：PDF 知识点导入错误文件，默认 `data/raw/pdf_knowledge_import_errors.jsonl`。
-
-PDF 文本抽取依赖 `pypdf`。如果提示缺少依赖，请重新安装：
-
-```bash
-pip install -r requirements.txt
-```
-
 ---
 
-## 7. 调试脚本
+## 调试脚本
 
-### 7.1 仅检索验证
+### 仅测试检索
 
 ```bash
 python -m scripts.demo_query --question "x^2+4x+3=0 怎么解？" --show-context
@@ -274,34 +444,170 @@ python -m scripts.demo_query --question "x^2+4x+3=0 怎么解？" --show-context
 python -m scripts.demo_query --interactive --show-context
 ```
 
-### 7.2 RAG 端到端验证
+### 测试完整 RAG 链路
 
 ```bash
-python -m scripts.test_rag --question "x^2+4x+3=0 怎么解？" --show-references
+python -m scripts.test_rag \
+  --question "x^2+4x+3=0 怎么解？" \
+  --show-references
+```
+
+打印完整 JSON：
+
+```bash
+python -m scripts.test_rag \
+  --question "x^2+4x+3=0 怎么解？" \
+  --show-full-json
 ```
 
 ---
 
-## 8. 启动服务
+## API 示例
 
-### 8.1 本地启动
+### 健康检查
 
-```bash
-python run.py
+```http
+GET /health
 ```
 
-或开发模式：
+响应：
 
-```bash
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```json
+{
+  "status": "ok",
+  "app_name": "MathRAG MVP"
+}
 ```
 
-启动后访问：
-- 首页：`http://127.0.0.1:8000/`
-- Swagger：`http://127.0.0.1:8000/docs`
-- 健康检查：`http://127.0.0.1:8000/health`
+### 数学问答
 
-### 8.2 Docker Compose 启动
+```http
+POST /api/chat
+Content-Type: application/json
+```
+
+请求：
+
+```json
+{
+  "question": "x^2+4x+3=0 怎么解？",
+  "history": [
+    {"role": "user", "content": "我想复习一元二次方程。"},
+    {"role": "assistant", "content": "可以从因式分解法、配方法和求根公式开始。"}
+  ],
+  "top_k": 3
+}
+```
+
+响应结构示例：
+
+```json
+{
+  "question": "x^2+4x+3=0 怎么解？",
+  "answer": "可以因式分解为 \\((x+1)(x+3)=0\\)，所以 \\(x=-1\\) 或 \\(x=-3\\)。",
+  "steps": [
+    "把方程写成标准形式 \\(x^2+4x+3=0\\)。",
+    "分解为 \\((x+1)(x+3)=0\\)。",
+    "分别令两个因式为 0，得到 \\(x=-1\\) 或 \\(x=-3\\)。"
+  ],
+  "used_knowledge": ["因式分解法解一元二次方程"],
+  "related_questions": [
+    "什么时候适合使用因式分解法？",
+    "同一道题如何用求根公式求解？"
+  ],
+  "references": [
+    {
+      "rank": 1,
+      "score": 0.91,
+      "index": 12,
+      "chunk_id": "k0001_chunk_0",
+      "source_id": "k0001",
+      "category": "quadratic_equation",
+      "title": "因式分解法解一元二次方程",
+      "keywords": ["一元二次方程", "因式分解"],
+      "content": "...",
+      "example": "...",
+      "steps": ["..."],
+      "difficulty": "easy",
+      "answer_context": "...",
+      "retrieval_text": "...",
+      "source_line": 1,
+      "metadata": {}
+    }
+  ],
+  "agentic_plan": {
+    "strategy": "围绕一元二次方程因式分解和求根步骤进行检索。",
+    "retrieval_queries": ["一元二次方程 因式分解 解法", "x^2+4x+3=0 求根"]
+  },
+  "reasoning_content": null
+}
+```
+
+### 知识抽取
+
+```http
+POST /api/knowledge/extract
+Content-Type: application/json
+```
+
+请求：
+
+```json
+{
+  "text": "函数 y=kx+b 且 k 不等于 0 时称为一次函数。",
+  "category": "函数",
+  "save": false
+}
+```
+
+响应：
+
+```json
+{
+  "records": [
+    {
+      "id": "k0001",
+      "category": "函数",
+      "title": "一次函数的概念",
+      "keywords": ["一次函数", "函数"],
+      "content": "形如 \\(y=kx+b\\) 且 \\(k\\ne0\\) 的函数称为一次函数。",
+      "example": "例如 \\(y=2x+3\\) 是一次函数。",
+      "steps": ["识别表达式是否为 \\(y=kx+b\\)。", "检查 \\(k\\ne0\\)。"],
+      "difficulty": "easy"
+    }
+  ],
+  "saved_count": 0,
+  "knowledge_path": "data/raw/math_knowledge_seed.jsonl",
+  "next_steps": []
+}
+```
+
+---
+
+## 前端说明
+
+前端文件位于：
+
+```text
+app/frontend/index.html
+app/frontend/style.css
+app/frontend/app.js
+```
+
+能力：
+
+- 输入数学问题并调用 `/api/chat`
+- 展示 answer / steps / references / related_questions
+- 展示 agentic 检索规划
+- 使用 KaTeX 自动渲染公式
+
+注意：当前 KaTeX 通过 jsDelivr CDN 引入。如果部署环境不能访问外网，可改为本地托管 KaTeX 静态资源。
+
+---
+
+## Docker 部署
+
+构建并启动：
 
 ```bash
 docker compose up -d --build
@@ -319,117 +625,85 @@ docker compose logs -f mathrag
 docker compose down
 ```
 
----
+默认端口映射：
 
-## 9. API 示例
-
-### 9.1 `POST /api/chat`
-
-请求：
-
-```json
-{
-  "question": "x^2+4x+3=0 怎么解？",
-  "history": [
-    {"role": "user", "content": "我不会解一元二次方程"}
-  ],
-  "top_k": 3
-}
+```text
+127.0.0.1:8000 -> container:8000
 ```
 
-响应（示例）：
-
-```json
-{
-  "question": "x^2+4x+3=0 怎么解？",
-  "answer": "可因式分解得到 x=-1 或 x=-3。",
-  "steps": [
-    "将方程整理为标准形式。",
-    "因式分解为 (x+1)(x+3)=0。",
-    "分别令因式为0得到两个根。"
-  ],
-  "used_knowledge": ["因式分解法解一元二次方程"],
-  "related_questions": ["如何用求根公式解？", "什么情况下适合因式分解？"],
-  "references": [
-    {
-      "rank": 1,
-      "score": 0.91,
-      "index": 12,
-      "chunk_id": "k0001_chunk_0",
-      "source_id": "k0001",
-      "category": "quadratic_equation",
-      "stage": "junior_secondary",
-      "course": "初中代数",
-      "title": "因式分解法解一元二次方程",
-      "keywords": ["一元二次方程", "因式分解"],
-      "content": "...",
-      "example": "...",
-      "steps": ["..."],
-      "prerequisites": ["整式乘法"],
-      "difficulty": "easy",
-      "answer_context": "...",
-      "retrieval_text": "...",
-      "source_line": 1,
-      "metadata": {}
-    }
-  ],
-  "reasoning_content": null
-}
-```
+`docker-compose.yml` 默认使用 `.env` 注入环境变量。
 
 ---
 
-## 10. 测试
-
-运行测试：
+## 测试
 
 ```bash
 pytest -q
 ```
 
-当前测试主要覆盖：
-- `/api/chat` 成功响应结构
-- `history` 参数透传
-- 参数校验（空问题、非法 `top_k`）
-- 管道异常时的 HTTP 状态码与错误信息
+测试主要覆盖：
+
+- `/api/chat` 响应结构与异常处理
+- `/api/knowledge/extract` 保存/预览逻辑
+- RAG 多查询检索与引用合并
+- 数学知识导入器
+- PDF 知识导入器
 
 ---
 
-## 11. 常见问题
+## 常见问题
 
-### 11.1 `ModuleNotFoundError: No module named 'app'`
+### `ModuleNotFoundError: No module named 'app'`
 
-请确保在项目根目录下执行，并优先使用模块方式：
+请在项目根目录运行命令，并优先使用模块方式：
 
 ```bash
+python -m scripts.build_kb
 python -m scripts.build_index
 ```
 
-### 11.2 大模型接口报鉴权/余额错误
+### `ModuleNotFoundError: No module named 'dotenv'`
 
-- 检查 `LLM_API_KEY` 是否正确；
-- 检查 DeepSeek 账户余额与调用权限；
-- 检查 `LLM_BASE_URL` 是否可访问。
+说明当前 Python 环境没有安装项目依赖。先激活虚拟环境并安装依赖：
 
-### 11.3 首页能打开但样式丢失
-
-确认以下静态文件存在：
-
-```text
-app/frontend/index.html
-app/frontend/style.css
-app/frontend/app.js
+```bash
+pip install -r requirements.txt
 ```
+
+### `LLM_API_KEY` 或 `EMBEDDING_API_KEY` 缺失
+
+检查 `.env` 是否存在，并确认 key 名称正确：
+
+```env
+LLM_API_KEY=...
+EMBEDDING_API_KEY=...
+```
+
+### FAISS 索引数量与 `id_map` 数量不一致
+
+通常是只更新了部分数据文件。重新执行：
+
+```bash
+python -m scripts.build_kb
+python -m scripts.build_index
+```
+
+### 公式没有渲染
+
+检查：
+
+1. 前端是否能加载 KaTeX CDN。
+2. 公式是否使用 `\(...\)` 或 `\[...\]`。
+3. JSON 字符串里的反斜杠是否正确转义。
 
 ---
 
-## 12. 后续可扩展方向
+## 开发约定
 
-- 引入 rerank 提升召回精度
-- 增加公式渲染（如 KaTeX）
-- 增强多轮上下文管理与记忆策略
-- 增加评测集与自动化评估脚本
-- 扩展更多学段与题型知识库
+- 新知识库记录只使用新版字段：`id/category/title/keywords/content/example/steps/difficulty`。
+- 新增公式统一使用 KaTeX LaTeX 分隔符。
+- 修改 `math_knowledge_seed.jsonl` 后，应依次执行校验、构建 chunk、构建索引。
+- 临时 PDF、依赖、备份文件已通过 `.gitignore` / `.dockerignore` 排除。
 
 ---
 

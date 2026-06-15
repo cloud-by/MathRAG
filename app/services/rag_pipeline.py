@@ -152,14 +152,11 @@ class RAGPipeline:
             "chunk_id": str(ref.get("chunk_id", "")).strip(),
             "source_id": str(ref.get("source_id", "")).strip(),
             "category": str(ref.get("category", "")).strip(),
-            "stage": str(ref.get("stage", "")).strip(),
-            "course": str(ref.get("course", "")).strip(),
             "title": str(ref.get("title", "")).strip(),
             "keywords": RAGPipeline._normalize_str_list(ref.get("keywords", [])),
             "content": str(ref.get("content", "")).strip(),
             "example": str(ref.get("example", "")).strip(),
             "steps": RAGPipeline._normalize_str_list(ref.get("steps", [])),
-            "prerequisites": RAGPipeline._normalize_str_list(ref.get("prerequisites", [])),
             "difficulty": str(ref.get("difficulty", "")).strip(),
             "answer_context": str(ref.get("answer_context", "")).strip(),
             "retrieval_text": str(ref.get("retrieval_text", "")).strip(),
@@ -185,8 +182,6 @@ class RAGPipeline:
 
         first = references[0]
         title = str(first.get("title", "")).strip()
-        stage = str(first.get("stage", "")).strip()
-        course = str(first.get("course", "")).strip()
 
         steps: List[str] = []
         if title:
@@ -194,11 +189,7 @@ class RAGPipeline:
         else:
             steps.append("先结合检索到的参考知识理解当前问题。")
 
-        if stage or course:
-            desc = "、".join([x for x in [stage, course] if x])
-            steps.append(f"优先参考与当前问题最匹配的知识层级：{desc}。")
-        else:
-            steps.append("优先参考最相关的知识内容、例子和步骤说明。")
+        steps.append("优先参考最相关的知识内容、例子和步骤说明。")
 
         return steps[:2]
 

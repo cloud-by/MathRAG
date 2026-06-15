@@ -19,14 +19,11 @@ REQUIRED_FIELDS = [
     "chunk_id",
     "source_id",
     "category",
-    "stage",
-    "course",
     "title",
     "keywords",
     "content",
     "example",
     "steps",
-    "prerequisites",
     "difficulty",
     "retrieval_text",
     "answer_context",
@@ -71,9 +68,6 @@ def validate_chunk(chunk: Dict[str, Any], idx: int) -> None:
     if not isinstance(chunk.get("steps"), list):
         raise ValueError(f"第 {idx} 条 chunk 的 steps 必须为列表")
 
-    if not isinstance(chunk.get("prerequisites"), list):
-        raise ValueError(f"第 {idx} 条 chunk 的 prerequisites 必须为列表")
-
     metadata = chunk.get("metadata")
     if metadata is not None and not isinstance(metadata, dict):
         raise ValueError(f"第 {idx} 条 chunk 的 metadata 必须为对象")
@@ -102,14 +96,11 @@ def build_rich_id_map(chunks: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]
             "chunk_id": chunk_id,
             "source_id": str(chunk["source_id"]).strip(),
             "category": str(chunk["category"]).strip(),
-            "stage": str(chunk["stage"]).strip(),
-            "course": str(chunk["course"]).strip(),
             "title": str(chunk["title"]).strip(),
             "keywords": chunk["keywords"],
             "content": str(chunk["content"]).strip(),
             "example": str(chunk["example"]).strip(),
             "steps": chunk["steps"],
-            "prerequisites": chunk["prerequisites"],
             "difficulty": str(chunk["difficulty"]).strip(),
             "answer_context": str(chunk["answer_context"]).strip(),
             "source_line": chunk.get("source_line"),
@@ -121,24 +112,17 @@ def build_rich_id_map(chunks: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]
 
 def print_chunk_summary(chunks: List[Dict[str, Any]]) -> None:
     category_count: Dict[str, int] = {}
-    stage_count: Dict[str, int] = {}
     difficulty_count: Dict[str, int] = {}
 
     for chunk in chunks:
         category = str(chunk["category"])
-        stage = str(chunk["stage"])
         difficulty = str(chunk["difficulty"])
 
         category_count[category] = category_count.get(category, 0) + 1
-        stage_count[stage] = stage_count.get(stage, 0) + 1
         difficulty_count[difficulty] = difficulty_count.get(difficulty, 0) + 1
 
     print("输入 chunk 统计：")
     print(f"  - 总条数：{len(chunks)}")
-
-    print("  - 学段统计：")
-    for stage, count in sorted(stage_count.items(), key=lambda x: x[0]):
-        print(f"    * {stage}: {count}")
 
     print("  - 难度统计：")
     for difficulty, count in sorted(difficulty_count.items(), key=lambda x: x[0]):

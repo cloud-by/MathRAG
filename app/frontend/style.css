@@ -166,6 +166,27 @@ body {
   word-break: break-word;
 }
 
+.math-content {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.math-content .katex {
+  font-size: 1.03em;
+  white-space: normal;
+  word-break: normal;
+}
+
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25rem 0;
+}
+
+.katex-display > .katex {
+  white-space: nowrap;
+}
+
 .message-content code {
   background: #eef2ff;
   padding: 2px 6px;

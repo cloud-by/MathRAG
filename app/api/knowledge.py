@@ -22,8 +22,6 @@ def extract_knowledge(request: KnowledgeExtractRequest) -> KnowledgeExtractRespo
     try:
         records = extract_knowledge_records(
             text=request.text,
-            stage=request.stage,
-            course=request.course,
             category=request.category,
         )
         saved_count = append_records(records) if request.save else 0

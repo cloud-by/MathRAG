@@ -349,10 +349,8 @@ def discover_documents(
     return documents
 
 
-def build_transform_messages(chunk: TextChunk, stage: str | None, course: str | None, category: str | None) -> List[Dict[str, str]]:
+def build_transform_messages(chunk: TextChunk, category: str | None) -> List[Dict[str, str]]:
     hints = {
-        "stage": stage,
-        "course": course,
         "category": category,
         "source_name": chunk.document.source_name,
         "source_url": chunk.document.source_url,
@@ -367,6 +365,8 @@ def build_transform_messages(chunk: TextChunk, stage: str | None, course: str | 
             "content": (
                 "你是严格的中文数学知识库编辑。只返回合法 JSON，不要返回 markdown、注释或包裹文本。"
                 "所有知识库字段内容必须用简体中文表达；数学符号、变量名和公式可以保留原文。"
+                "涉及数学公式时，必须使用 KaTeX 可渲染的 LaTeX：行内公式用 \\( ... \\)，"
+                "块级公式用 \\[ ... \\]，不要新增 $...$ 或 $$...$$。"
             ),
         },
         {
@@ -379,12 +379,16 @@ def build_transform_messages(chunk: TextChunk, stage: str | None, course: str | 
                 f"{json.dumps(SEED_FIELD_ORDER, ensure_ascii=False)}\n\n"
                 "字段规则：\n"
                 "- id：省略或留空，导入器会自动分配 k0001 风格 id。\n"
-                "- stage：只能是 primary、junior_secondary、senior_secondary、undergraduate。\n"
                 "- difficulty：只能是 easy、medium、hard。\n"
-                "- category、course、title、keywords、content、example、steps、prerequisites 必须使用简体中文。\n"
+                "- category、title、keywords、content、example、steps 必须使用简体中文。\n"
                 "- keywords 和 steps 必须是非空字符串数组。\n"
                 "- content 要严谨、简洁，适合 RAG 问答，不要大段照搬来源文本。\n"
                 "- 可保留必要公式、函数名、变量名、英文专名缩写，例如 f(x)、sin、L'Hospital。\n"
+                "- content、example、steps 中如包含数学公式，必须统一为 KaTeX LaTeX 分隔符："
+                "行内公式用 \\( ... \\)，块级公式用 \\[ ... \\]；不要新增 $...$ 或 $$...$$。\n"
+                "- 如果来源文本中公式使用 $...$ 或 $$...$$，写入知识库前必须转换为 \\( ... \\) 或 \\[ ... \\]。\n"
+                "- 字符串字段内部不要包含原始换行，不要把公式逐字符、逐行拆开。\n"
+                "- 输出必须是可被 json.loads 解析的合法 JSON。\n"
                 "- 从定义、定理、公式、证明、例题中抽取知识点；无关内容不要写入。\n\n"
                 f"提示和来源元数据：\n{json.dumps(hints, ensure_ascii=False)}\n\n"
                 f"清洗后的来源文本：\n{chunk.text}"
@@ -405,13 +409,11 @@ def validate_chinese_record(record: KnowledgeRecord, min_ratio: float = 0.35) ->
     text = " ".join(
         [
             record.category,
-            record.course,
             record.title,
             " ".join(record.keywords),
             record.content,
             record.example,
             " ".join(record.steps),
-            " ".join(record.prerequisites),
         ]
     )
     ratio = chinese_ratio(text)
@@ -421,13 +423,9 @@ def validate_chinese_record(record: KnowledgeRecord, min_ratio: float = 0.35) ->
         )
 
 
-def normalize_ai_item(raw: Dict[str, Any], item_id: str, stage: str | None, course: str | None, category: str | None) -> KnowledgeRecord:
+def normalize_ai_item(raw: Dict[str, Any], item_id: str, category: str | None) -> KnowledgeRecord:
     item = dict(raw)
     item["id"] = item_id
-    if stage:
-        item["stage"] = stage
-    if course and not str(item.get("course", "")).strip():
-        item["course"] = course
     if category and not str(item.get("category", "")).strip():
         item["category"] = category
     record = KnowledgeRecord(**{field: item.get(field) for field in SEED_FIELD_ORDER})
@@ -465,13 +463,11 @@ def transform_chunk(
     chunk: TextChunk,
     output_path: Path,
     error_path: Path,
-    stage: str | None = None,
-    course: str | None = None,
     category: str | None = None,
 ) -> List[KnowledgeRecord]:
     raw_response: Any | None = None
     try:
-        response = chat_json(messages=build_transform_messages(chunk, stage, course, category), temperature=0.1)
+        response = chat_json(messages=build_transform_messages(chunk, category), temperature=0.1)
         raw_response = response.data
         items = response.data.get("items")
         if not isinstance(items, list) or not items:
@@ -482,7 +478,7 @@ def transform_chunk(
         for index, item in enumerate(items):
             if not isinstance(item, dict):
                 raise ValueError(f"items[{index}] is not an object")
-            records.append(normalize_ai_item(item, next_ids[index], stage, course, category))
+            records.append(normalize_ai_item(item, next_ids[index], category))
 
         append_records(records, output_path)
         return records
@@ -497,8 +493,6 @@ def import_math_knowledge(
     limit_per_source: int = 3,
     output_path: Path = settings.RAW_KB_PATH,
     error_path: Path = settings.RAW_DATA_DIR / "math_knowledge_import_errors.jsonl",
-    stage: str | None = None,
-    course: str | None = None,
     category: str | None = None,
     max_chunk_chars: int = 6000,
     delay_seconds: float = 1.0,
@@ -529,8 +523,6 @@ def import_math_knowledge(
                 chunk=chunk,
                 output_path=output_path,
                 error_path=error_path,
-                stage=stage,
-                course=course,
                 category=category,
             )
         )

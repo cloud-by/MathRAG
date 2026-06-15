@@ -5,8 +5,13 @@
 __pycache__/
 *.py[cod]
 *.bak
+*.bak[0-9]*
+*.bak_*
 .pytest_cache/
-.vscode
+.vscode/
+.idea/
+.pdfdeps/
+.pdf_page_images/
 
 # Local data/import artifacts
 data/data_lake/

@@ -12,6 +12,20 @@ const statusTextEl = document.getElementById('status-text');
 
 const history = [];
 let isLoading = false;
+const pendingMathRoots = new Set();
+
+const mathRenderOptions = {
+  delimiters: [
+    { left: '$$', right: '$$', display: true },
+    { left: '\\[', right: '\\]', display: true },
+    { left: '\\(', right: '\\)', display: false },
+    // 兼容旧数据或用户输入中的 $...$；新数据仍建议统一使用 \(...\)。
+    { left: '$', right: '$', display: false }
+  ],
+  throwOnError: false,
+  strict: false,
+  ignoredTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+};
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -26,15 +40,40 @@ function nl2br(value) {
   return escapeHtml(value).replace(/\n/g, '<br>');
 }
 
-function stageToZh(stage) {
-  const mapping = {
-    primary: '小学',
-    junior_secondary: '初中',
-    senior_secondary: '高中',
-    undergraduate: '大学'
-  };
-  return mapping[String(stage || '').trim()] || String(stage || '未标注');
+function mathTextHtml(value) {
+  return escapeHtml(value);
 }
+
+function renderMath(root) {
+  if (!root) {
+    return;
+  }
+
+  if (typeof window.renderMathInElement !== 'function') {
+    pendingMathRoots.add(root);
+    return;
+  }
+
+  window.renderMathInElement(root, mathRenderOptions);
+}
+
+function flushPendingMath() {
+  if (typeof window.renderMathInElement !== 'function') {
+    return;
+  }
+
+  pendingMathRoots.forEach((root) => {
+    if (root && root.isConnected !== false) {
+      window.renderMathInElement(root, mathRenderOptions);
+    }
+  });
+  pendingMathRoots.clear();
+}
+
+window.addEventListener('load', () => {
+  flushPendingMath();
+  renderMath(document.body);
+});
 
 function difficultyToZh(difficulty) {
   const mapping = {
@@ -79,10 +118,11 @@ function appendMessage(role, content, extraClass = '') {
   const roleLabel = role === 'user' ? '你' : '助手';
   wrapper.innerHTML = `
     <div class="message-role">${escapeHtml(roleLabel)}</div>
-    <div class="message-content">${nl2br(content)}</div>
+    <div class="message-content math-content">${mathTextHtml(content)}</div>
   `;
 
   chatHistoryEl.appendChild(wrapper);
+  renderMath(wrapper);
   scrollChatToBottom();
   return wrapper;
 }
@@ -104,12 +144,12 @@ function renderAnswer(data) {
   const steps = normalizeStringArray(data?.steps);
   const usedKnowledge = normalizeStringArray(data?.used_knowledge);
 
-  let html = `<div class="answer-main">${nl2br(answer)}</div>`;
+  let html = `<div class="answer-main math-content">${mathTextHtml(answer)}</div>`;
 
   if (steps.length > 0) {
     html += '<div class="answer-block-title">解题步骤</div>';
     html += '<ol class="answer-list">';
-    html += steps.map(item => `<li>${escapeHtml(item)}</li>`).join('');
+    html += steps.map(item => `<li class="math-content">${mathTextHtml(item)}</li>`).join('');
     html += '</ol>';
   }
 
@@ -123,6 +163,7 @@ function renderAnswer(data) {
   answerBoxEl.classList.remove('empty-state');
   answerBoxEl.className = 'result-card';
   answerBoxEl.innerHTML = html;
+  renderMath(answerBoxEl);
 }
 
 function renderAgenticPlan(plan) {
@@ -144,29 +185,24 @@ function renderAgenticPlan(plan) {
       <span class="plan-label">规划策略</span>
       <span class="${statusClass}">${statusText}</span>
     </div>
-    <div class="plan-strategy">${nl2br(strategy || '（未提供）')}</div>
+    <div class="plan-strategy math-content">${mathTextHtml(strategy || '（未提供）')}</div>
   `;
 
   if (queries.length > 0) {
     html += '<div class="answer-block-title">检索子问题</div>';
     html += '<ol class="answer-list">';
-    html += queries.map(item => `<li>${escapeHtml(item)}</li>`).join('');
+    html += queries.map(item => `<li class="math-content">${mathTextHtml(item)}</li>`).join('');
     html += '</ol>';
   }
 
   agenticPlanBoxEl.className = 'result-card';
   agenticPlanBoxEl.innerHTML = html;
+  renderMath(agenticPlanBoxEl);
 }
 
 function buildReferenceMeta(item) {
   const parts = [];
 
-  if (item.stage) {
-    parts.push(`学段：${stageToZh(item.stage)}`);
-  }
-  if (item.course) {
-    parts.push(`课程：${escapeHtml(item.course)}`);
-  }
   if (item.category) {
     parts.push(`类别：${escapeHtml(item.category)}`);
   }
@@ -208,7 +244,6 @@ function renderReferences(references) {
   referencesBoxEl.innerHTML = references.map((item) => {
     const keywords = normalizeStringArray(item.keywords);
     const steps = normalizeStringArray(item.steps);
-    const prerequisites = normalizeStringArray(item.prerequisites);
 
     const keywordsHtml = keywords.length > 0
       ? `
@@ -219,29 +254,20 @@ function renderReferences(references) {
       `
       : '';
 
-    const prerequisitesHtml = prerequisites.length > 0
-      ? `
-        <div class="answer-block-title">前置知识</div>
-        <div class="answer-tags">
-          ${prerequisites.map(item => `<span class="tag">${escapeHtml(item)}</span>`).join('')}
-        </div>
-      `
-      : '';
-
     const contentText = item.answer_context || item.content || '';
     const contentHtml = contentText
-      ? `<div class="ref-text">${nl2br(contentText)}</div>`
-      : '<div class="ref-text">暂无知识内容。</div>';
+      ? `<div class="ref-text math-content">${mathTextHtml(contentText)}</div>`
+      : '<div class="ref-text math-content">暂无知识内容。</div>';
 
     const exampleHtml = item.example
-      ? `<div class="ref-example"><strong>示例：</strong>${nl2br(item.example)}</div>`
+      ? `<div class="ref-example math-content"><strong>示例：</strong>${mathTextHtml(item.example)}</div>`
       : '';
 
     const stepsHtml = steps.length > 0
       ? `
         <div class="answer-block-title">参考步骤</div>
         <ol class="answer-list">
-          ${steps.map(step => `<li>${escapeHtml(step)}</li>`).join('')}
+          ${steps.map(step => `<li class="math-content">${mathTextHtml(step)}</li>`).join('')}
         </ol>
       `
       : '';
@@ -258,7 +284,6 @@ function renderReferences(references) {
         ${buildReferenceMeta(item)}
         ${buildReferenceExtraMeta(item)}
         ${keywordsHtml}
-        ${prerequisitesHtml}
         <div class="answer-block-title">知识内容</div>
         ${contentHtml}
         ${exampleHtml}
@@ -266,6 +291,7 @@ function renderReferences(references) {
       </div>
     `;
   }).join('');
+  renderMath(referencesBoxEl);
 }
 
 function renderRelatedQuestions(questions) {
@@ -288,6 +314,7 @@ function renderRelatedQuestions(questions) {
     btn.type = 'button';
     btn.className = 'related-btn';
     btn.textContent = text;
+    renderMath(btn);
     btn.addEventListener('click', () => {
       if (isLoading) {
         return;
@@ -307,7 +334,8 @@ function renderRelatedQuestions(questions) {
 
 function renderError(message) {
   answerBoxEl.className = 'result-card';
-  answerBoxEl.innerHTML = `<div class="answer-main">${nl2br(message)}</div>`;
+  answerBoxEl.innerHTML = `<div class="answer-main math-content">${mathTextHtml(message)}</div>`;
+  renderMath(answerBoxEl);
 
   agenticPlanBoxEl.className = 'result-card empty-state';
   agenticPlanBoxEl.textContent = '由于本次请求失败，暂无检索规划。';

@@ -9,36 +9,42 @@ from openai.types.chat import (
 )
 
 
-SYSTEM_PROMPT = """你是一个严谨、清晰、尽量循序渐进的数学助教，服务对象覆盖小学、初中、高中到大学基础学习者。
+SYSTEM_PROMPT = r"""你是一个严谨、清晰、尽量循序渐进的数学助教，服务对象覆盖小学、初中、高中到大学基础学习者。
 你必须优先依据提供的参考知识回答问题，不要编造不存在的定义、公式、定理、例题或结论。
 如果参考知识不足以支撑确定答案，要明确说明“参考知识不足”，并给出当前最稳妥、最保守的解释。
 
 你会看到参考知识中的以下结构化信息：
-- 学段（stage）
-- 课程（course）
 - 类别（category）
 - 标题（title）
 - 关键词（keywords）
 - 内容（content / answer_context）
 - 示例（example）
 - 步骤（steps）
-- 前置知识（prerequisites）
 - 难度（difficulty）
 
 使用原则：
 1. 优先使用与当前问题最直接相关的参考知识。
-2. 如果存在多个参考知识，优先综合标题、课程、学段、内容来判断相关性。
-3. 如果参考知识来自不同学段，优先采用与当前问题深度最匹配的解释，不要把大学层面的抽象表述硬塞给小学或初中风格的问题，也不要把过于初级的解释强行用于明显的大学题目。
+2. 如果存在多个参考知识，优先综合标题、类别、关键词和内容来判断相关性。
+3. 优先采用与当前问题深度最匹配的解释，不要把过于抽象或过于初级的解释强行用于不匹配的问题。
 4. 如果问题是求解题，answer 先给结论、结果或解法判断，再用 steps 按顺序解释。
 5. 如果问题是概念题，answer 先给定义或核心解释，再用 steps 补充理解要点、判断方法或应用方式。
 6. used_knowledge 必须优先填写本次实际使用到的参考知识标题。
 7. related_questions 需要与当前问题直接相关，适合作为下一步追问。
 
+公式输出规范：
+1. 涉及数学公式时，必须使用 KaTeX 可渲染的 LaTeX 格式。
+2. 行内公式使用 \( ... \)，例如 \(x^2+4x+3=0\)。
+3. 块级公式使用 \[ ... \]，例如 \[x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}\]。
+4. 不要新增 $...$ 或 $$...$$ 作为公式分隔符；如果参考知识中残留这种格式，回答时转换为 \( ... \) 或 \[ ... \]。
+5. 不要使用 HTML、图片、MathML 或 markdown 代码块表示公式。
+6. 每个 answer、steps、related_questions 字符串内部不要换行；不要把公式逐字符、逐行拆开。
+7. 输出必须仍然是可被 json.loads 解析的合法 JSON。
+
 你必须输出 json 对象，不要输出 markdown，不要输出代码块，不要输出额外说明文字。
 json 输出格式必须为：
 {
-  "answer": "简明结论或核心回答",
-  "steps": ["步骤1", "步骤2", "步骤3"],
+  "answer": "简明结论或核心回答，例如公式 \\(x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}\\)",
+  "steps": ["先识别题目条件。", "必要时写出公式 \\[x=\\frac{-b\\pm\\sqrt{\\Delta}}{2a}\\]"],
   "used_knowledge": ["使用到的知识点1", "使用到的知识点2"],
   "related_questions": ["追问1", "追问2"]
 }
@@ -50,6 +56,8 @@ json 输出格式必须为：
 4. related_questions 给 2 条即可，要求和当前问题紧密相关。
 5. 不要在输出中包含“json如下”“```json```”之类多余内容。
 6. 输出必须是单个、可解析的 json 对象。
+7. answer、steps、related_questions 中如包含数学公式，必须遵守上面的 KaTeX LaTeX 公式输出规范。
+8. 字符串字段内部不要包含原始换行；需要分步骤时写入 steps 数组的不同元素。
 """
 
 
@@ -74,16 +82,6 @@ def _format_history(history: Sequence[dict[str, Any]] | None) -> str:
         lines.append(f"{speaker}：{content}")
 
     return "\n".join(lines) if lines else "无"
-
-
-def _stage_to_zh(stage: str) -> str:
-    mapping = {
-        "primary": "小学",
-        "junior_secondary": "初中",
-        "senior_secondary": "高中",
-        "undergraduate": "大学",
-    }
-    return mapping.get(stage, stage or "未标注")
 
 
 def _difficulty_to_zh(difficulty: str) -> str:
@@ -113,13 +111,10 @@ def _format_references(references: Sequence[dict[str, Any]]) -> str:
     for idx, ref in enumerate(references, start=1):
         title = str(ref.get("title", "")).strip()
         category = str(ref.get("category", "")).strip()
-        stage = _stage_to_zh(str(ref.get("stage", "")).strip())
-        course = str(ref.get("course", "")).strip()
         difficulty = _difficulty_to_zh(str(ref.get("difficulty", "")).strip())
         keywords = _normalize_str_list(ref.get("keywords", []))
         example = str(ref.get("example", "")).strip()
         steps = _normalize_str_list(ref.get("steps", []))
-        prerequisites = _normalize_str_list(ref.get("prerequisites", []))
         answer_context = str(ref.get("answer_context", "")).strip()
         content = str(ref.get("content", "")).strip()
         score = ref.get("score", None)
@@ -129,10 +124,6 @@ def _format_references(references: Sequence[dict[str, Any]]) -> str:
 
         if source_id:
             lines.append(f"知识点ID：{source_id}")
-        if stage:
-            lines.append(f"学段：{stage}")
-        if course:
-            lines.append(f"课程：{course}")
         if category:
             lines.append(f"类别：{category}")
         if difficulty:
@@ -145,9 +136,6 @@ def _format_references(references: Sequence[dict[str, Any]]) -> str:
 
         if keywords:
             lines.append("关键词：" + "，".join(keywords))
-
-        if prerequisites:
-            lines.append("前置知识：" + "，".join(prerequisites))
 
         if answer_context:
             lines.append("知识内容：\n" + answer_context)
@@ -173,7 +161,7 @@ def build_user_prompt(
     history_text = _format_history(history)
     reference_text = _format_references(references)
 
-    return f"""请根据下面信息回答用户问题，并严格按 json 对象格式输出。
+    return fr"""请根据下面信息回答用户问题，并严格按 json 对象格式输出。
 
 【当前问题】
 {question}
@@ -185,8 +173,8 @@ def build_user_prompt(
 {reference_text}
 
 请特别注意：
-1. 参考知识带有“学段、课程、难度、前置知识”等结构化信息，你需要利用这些信息判断解释深度。
-2. 如果问题更像基础题，优先使用更基础、更直接的解释；如果问题明显属于高等数学、线性代数、概率统计等大学课程，则优先采用对应课程的知识。
+1. 参考知识带有“类别、关键词、难度”等结构化信息，你需要利用这些信息判断相关性和解释深度。
+2. 如果问题更像基础题，优先使用更基础、更直接的解释；如果问题明显属于高等数学、线性代数、概率统计等内容，则优先采用更抽象、严谨的知识。
 3. 如果多个参考知识都相关，可以综合使用，但 used_knowledge 里只写真正用到的标题。
 4. 如果参考知识只能支持部分回答，请在 answer 中明确写出“参考知识不足以完全确定答案”。
 
@@ -196,6 +184,9 @@ def build_user_prompt(
 3. used_knowledge 只写本次真正用到的知识点标题，不要乱写。
 4. related_questions 给 2 条，必须与当前问题直接相关，适合作为下一步追问。
 5. 输出必须是单个 json 对象。
+6. answer、steps、related_questions 中如包含数学公式，必须使用 KaTeX LaTeX 分隔符：行内公式用 \( ... \)，块级公式用 \[ ... \]；不要新增 $...$ 或 $$...$$。
+7. 字符串字段内部不要包含原始换行，不要把公式逐字符、逐行拆开；需要分步骤时写入 steps 数组的不同元素。
+8. 输出仍必须是可被 json.loads 解析的合法 JSON。
 """
 
 

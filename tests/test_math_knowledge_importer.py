@@ -10,14 +10,11 @@ def build_record(item_id: str = "k0001") -> KnowledgeRecord:
     return KnowledgeRecord(
         id=item_id,
         category="微积分",
-        stage="undergraduate",
-        course="微积分",
         title="导数",
         keywords=["导数", "变化率"],
         content="导数刻画函数在某一点附近的瞬时变化率。",
         example="例如 f(x)=x^2 的导数是 f'(x)=2x。",
         steps=["先明确函数表达式", "再使用导数定义或求导法则"],
-        prerequisites=["函数", "极限"],
         difficulty="medium",
     )
 
@@ -53,14 +50,11 @@ def test_transform_chunk_writes_valid_records_only(monkeypatch, tmp_path) -> Non
             "items": [
                 {
                     "category": "微积分",
-                    "stage": "undergraduate",
-                    "course": "微积分",
                     "title": "导数",
                     "keywords": ["导数", "变化率"],
                     "content": "导数刻画函数在某一点附近的瞬时变化率。",
                     "example": "例如 f(x)=x^2 的导数是 f'(x)=2x。",
                     "steps": ["先明确函数表达式", "再使用导数定义或求导法则"],
-                    "prerequisites": ["函数", "极限"],
                     "difficulty": "medium",
                 }
             ]
@@ -154,14 +148,11 @@ def test_transform_chunk_rejects_english_records(monkeypatch, tmp_path) -> None:
             "items": [
                 {
                     "category": "calculus",
-                    "stage": "undergraduate",
-                    "course": "Calculus",
                     "title": "Derivative",
                     "keywords": ["derivative", "rate of change"],
                     "content": "The derivative measures the instantaneous rate of change of a function.",
                     "example": "For f(x)=x^2, f'(x)=2x.",
                     "steps": ["Identify the function", "Apply a derivative rule"],
-                    "prerequisites": ["function", "limit"],
                     "difficulty": "medium",
                 }
             ]

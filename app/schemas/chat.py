@@ -6,7 +6,6 @@ from pydantic import BaseModel, Field, field_validator
 
 
 VALID_ROLES = {"user", "assistant", "system"}
-VALID_STAGES = {"primary", "junior_secondary", "senior_secondary", "undergraduate"}
 VALID_DIFFICULTIES = {"easy", "medium", "hard"}
 
 
@@ -54,15 +53,12 @@ class ReferenceItem(BaseModel):
     source_id: str = Field(..., description="原始知识点 id")
 
     category: str = Field(..., description="知识类别")
-    stage: str = Field(..., description="学段：primary / junior_secondary / senior_secondary / undergraduate")
-    course: str = Field(..., description="课程名称")
     title: str = Field(..., description="知识点标题")
 
     keywords: List[str] = Field(default_factory=list, description="关键词列表")
     content: str = Field(default="", description="知识点核心内容")
     example: str = Field(default="", description="示例或应用场景")
     steps: List[str] = Field(default_factory=list, description="理解或解题步骤")
-    prerequisites: List[str] = Field(default_factory=list, description="前置知识列表")
     difficulty: str = Field(..., description="难度：easy / medium / hard")
 
     answer_context: str = Field(default="", description="面向回答构造的上下文文本")
@@ -74,8 +70,6 @@ class ReferenceItem(BaseModel):
         "chunk_id",
         "source_id",
         "category",
-        "stage",
-        "course",
         "title",
         "difficulty",
         "content",
@@ -90,15 +84,6 @@ class ReferenceItem(BaseModel):
             return ""
         return str(value).strip()
 
-    @field_validator("stage")
-    @classmethod
-    def validate_stage(cls, value: str) -> str:
-        if value not in VALID_STAGES:
-            raise ValueError(
-                "stage 必须是 primary、junior_secondary、senior_secondary 或 undergraduate"
-            )
-        return value
-
     @field_validator("difficulty")
     @classmethod
     def validate_difficulty(cls, value: str) -> str:
@@ -106,7 +91,7 @@ class ReferenceItem(BaseModel):
             raise ValueError("difficulty 必须是 easy、medium 或 hard")
         return value
 
-    @field_validator("keywords", "steps", "prerequisites", mode="before")
+    @field_validator("keywords", "steps", mode="before")
     @classmethod
     def normalize_str_list(cls, value: Any) -> List[str]:
         if value is None:

@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Sequence
 from app.services.llm_service import chat_json
 
 
-PLANNER_SYSTEM_PROMPT = """你是一个负责 RAG 检索规划的智能体。
+PLANNER_SYSTEM_PROMPT = r"""你是一个负责 RAG 检索规划的智能体。
 你的任务是把用户问题转成更容易命中知识库的检索子问题。
 
 要求：
@@ -15,6 +15,9 @@ PLANNER_SYSTEM_PROMPT = """你是一个负责 RAG 检索规划的智能体。
 3. 每条检索子问题要尽量包含核心概念、公式名、关键条件或同义表达。
 4. strategy 用一句话解释检索策略。
 5. 不要输出 markdown，不要输出代码块。
+6. 如果 strategy 或 retrieval_queries 中包含数学公式，使用 KaTeX LaTeX 分隔符：行内公式用 \( ... \)，块级公式用 \[ ... \]；不要新增 $...$ 或 $$...$$。
+7. 字符串字段内部不要包含原始换行，不要把公式逐字符、逐行拆开。
+8. 输出必须是可被 json.loads 解析的合法 JSON。
 
 输出格式：
 {

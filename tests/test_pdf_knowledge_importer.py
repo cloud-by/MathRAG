@@ -83,13 +83,9 @@ def test_import_pdf_knowledge_can_call_transform(monkeypatch, tmp_path) -> None:
         output_path=tmp_path / "seed.jsonl",
         error_path=tmp_path / "errors.jsonl",
         extract_only=False,
-        stage="senior_secondary",
-        course="高中数学",
         category="导数",
     )
 
     assert result.saved_records == 1
     assert len(calls) == 1
-    assert calls[0]["stage"] == "senior_secondary"
-    assert calls[0]["course"] == "高中数学"
     assert calls[0]["category"] == "导数"

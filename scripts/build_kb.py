@@ -15,51 +15,15 @@ DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "processed" / "kb_chunks.jsonl"
 REQUIRED_TEXT_FIELDS = [
     "id",
     "category",
-    "stage",
-    "course",
     "title",
     "content",
-    "example",
     "difficulty",
 ]
 
 REQUIRED_LIST_FIELDS = [
     "keywords",
     "steps",
-    "prerequisites",
 ]
-
-
-STAGE_ALIASES = {
-    "小学": "primary",
-    "primary_school": "primary",
-    "primary": "primary",
-    "elementary": "primary",
-
-    "初中": "junior_secondary",
-    "junior": "junior_secondary",
-    "junior_high": "junior_secondary",
-    "junior_secondary": "junior_secondary",
-    "middle_school": "junior_secondary",
-
-    "高中": "senior_secondary",
-    "senior": "senior_secondary",
-    "high_school": "senior_secondary",
-    "senior_secondary": "senior_secondary",
-
-    "大学": "undergraduate",
-    "本科": "undergraduate",
-    "college": "undergraduate",
-    "university": "undergraduate",
-    "undergraduate": "undergraduate",
-}
-
-VALID_STAGES = {
-    "primary",
-    "junior_secondary",
-    "senior_secondary",
-    "undergraduate",
-}
 
 
 DIFFICULTY_ALIASES = {
@@ -122,13 +86,6 @@ def normalize_category(category: Any) -> str:
     return value or "concept"
 
 
-def normalize_stage(stage: Any) -> str:
-    value = normalize_text(stage).lower()
-    value = value.replace("-", "_").replace(" ", "_")
-    value = STAGE_ALIASES.get(value, value)
-    return value
-
-
 def normalize_difficulty(difficulty: Any) -> str:
     value = normalize_text(difficulty).lower()
     value = value.replace("-", "_").replace(" ", "_")
@@ -181,11 +138,6 @@ def validate_record(record: Dict[str, Any], line_no: int) -> Tuple[bool, List[st
         elif not isinstance(record[field], list):
             errors.append(f"字段 {field} 必须是列表")
 
-    if record.get("stage") and record["stage"] not in VALID_STAGES:
-        errors.append(
-            f"字段 stage 非法：{record['stage']}，允许值为 {sorted(VALID_STAGES)}"
-        )
-
     if record.get("difficulty") and record["difficulty"] not in VALID_DIFFICULTIES:
         errors.append(
             f"字段 difficulty 非法：{record['difficulty']}，允许值为 {sorted(VALID_DIFFICULTIES)}"
@@ -197,23 +149,10 @@ def validate_record(record: Dict[str, Any], line_no: int) -> Tuple[bool, List[st
     if not record.get("steps"):
         errors.append("字段 steps 不能为空列表")
 
-    if not isinstance(record.get("prerequisites"), list):
-        errors.append("字段 prerequisites 必须是列表")
-
     if record.get("id") and not re.match(r"^k\d+$", record["id"]):
         errors.append("字段 id 格式建议为 k0001 这类形式")
 
     return len(errors) == 0, errors
-
-
-def stage_to_zh(stage: str) -> str:
-    mapping = {
-        "primary": "小学",
-        "junior_secondary": "初中",
-        "senior_secondary": "高中",
-        "undergraduate": "大学",
-    }
-    return mapping.get(stage, stage)
 
 
 def difficulty_to_zh(difficulty: str) -> str:
@@ -228,8 +167,6 @@ def difficulty_to_zh(difficulty: str) -> str:
 def build_retrieval_text(item: Dict[str, Any]) -> str:
     parts: List[str] = []
 
-    parts.append(f"学段：{stage_to_zh(item['stage'])}")
-    parts.append(f"课程：{item['course']}")
     parts.append(f"知识点类别：{item['category']}")
     parts.append(f"知识点标题：{item['title']}")
 
@@ -244,9 +181,6 @@ def build_retrieval_text(item: Dict[str, Any]) -> str:
     if item["steps"]:
         parts.append("理解/解题步骤：" + "；".join(item["steps"]))
 
-    if item["prerequisites"]:
-        parts.append("前置知识：" + "，".join(item["prerequisites"]))
-
     parts.append(f"难度：{difficulty_to_zh(item['difficulty'])}")
 
     return "\n".join(parts)
@@ -255,8 +189,6 @@ def build_retrieval_text(item: Dict[str, Any]) -> str:
 def build_answer_context(item: Dict[str, Any]) -> str:
     lines: List[str] = [
         f"【{item['title']}】",
-        f"学段：{stage_to_zh(item['stage'])}",
-        f"课程：{item['course']}",
         f"类别：{item['category']}",
         f"难度：{difficulty_to_zh(item['difficulty'])}",
         item["content"],
@@ -264,9 +196,6 @@ def build_answer_context(item: Dict[str, Any]) -> str:
 
     if item["example"]:
         lines.append(f"示例：{item['example']}")
-
-    if item["prerequisites"]:
-        lines.append("前置知识：" + "，".join(item["prerequisites"]))
 
     if item["steps"]:
         lines.append("参考步骤：")
@@ -280,8 +209,6 @@ def normalize_record(raw: Dict[str, Any], line_no: int) -> Dict[str, Any]:
 
     item["id"] = normalize_text(raw.get("id"))
     item["category"] = normalize_category(raw.get("category"))
-    item["stage"] = normalize_stage(raw.get("stage"))
-    item["course"] = normalize_text(raw.get("course"))
     item["title"] = normalize_text(raw.get("title"))
     item["content"] = normalize_text(raw.get("content"))
     item["example"] = normalize_text(raw.get("example"))
@@ -291,8 +218,6 @@ def normalize_record(raw: Dict[str, Any], line_no: int) -> Dict[str, Any]:
 
     steps = normalize_list(raw.get("steps"))
     item["steps"] = [ensure_step_prefix(step, idx + 1) for idx, step in enumerate(steps)]
-
-    item["prerequisites"] = normalize_list(raw.get("prerequisites"))
 
     valid, errors = validate_record(item, line_no)
     if not valid:
@@ -324,14 +249,11 @@ def convert_to_chunk(record: Dict[str, Any]) -> Dict[str, Any]:
         "chunk_id": f"{record['id']}_chunk_0",
         "source_id": record["id"],
         "category": record["category"],
-        "stage": record["stage"],
-        "course": record["course"],
         "title": record["title"],
         "keywords": record["keywords"],
         "content": record["content"],
         "example": record["example"],
         "steps": record["steps"],
-        "prerequisites": record["prerequisites"],
         "difficulty": record["difficulty"],
         "source_line": record["source_line"],
         "retrieval_text": record["retrieval_text"],
@@ -341,9 +263,6 @@ def convert_to_chunk(record: Dict[str, Any]) -> Dict[str, Any]:
             "chunk_index": 0,
             "has_example": bool(record["example"]),
             "has_steps": bool(record["steps"]),
-            "has_prerequisites": bool(record["prerequisites"]),
-            "stage": record["stage"],
-            "course": record["course"],
             "difficulty": record["difficulty"],
         },
     }
@@ -379,34 +298,24 @@ def build_kb(input_path: Path, output_path: Path) -> List[Dict[str, Any]]:
 
 def print_summary(rows: List[Dict[str, Any]], output_path: Path) -> None:
     category_count: Dict[str, int] = {}
-    stage_count: Dict[str, int] = {}
     difficulty_count: Dict[str, int] = {}
     with_example = 0
     with_steps = 0
-    with_prerequisites = 0
 
     for row in rows:
         category = row["category"]
-        stage = row["stage"]
         difficulty = row["difficulty"]
 
         category_count[category] = category_count.get(category, 0) + 1
-        stage_count[stage] = stage_count.get(stage, 0) + 1
         difficulty_count[difficulty] = difficulty_count.get(difficulty, 0) + 1
 
         with_example += int(bool(row["example"]))
         with_steps += int(bool(row["steps"]))
-        with_prerequisites += int(bool(row["prerequisites"]))
 
     print(f"知识预处理完成，共生成 {len(rows)} 条 chunk。")
     print(f"输出文件：{output_path}")
     print(f"包含 example 的条目数：{with_example}")
     print(f"包含 steps 的条目数：{with_steps}")
-    print(f"包含 prerequisites 的条目数：{with_prerequisites}")
-
-    print("学段统计：")
-    for stage, count in sorted(stage_count.items(), key=lambda x: x[0]):
-        print(f"  - {stage}: {count}")
 
     print("难度统计：")
     for difficulty, count in sorted(difficulty_count.items(), key=lambda x: x[0]):
