@@ -137,15 +137,17 @@ def _format_references(references: Sequence[dict[str, Any]]) -> str:
         if keywords:
             lines.append("关键词：" + "，".join(keywords))
 
-        if answer_context:
-            lines.append("知识内容：\n" + answer_context)
-        elif content:
+        used_answer_context = False
+        if content:
             lines.append("知识内容：\n" + content)
+        elif answer_context:
+            lines.append("知识内容：\n" + answer_context)
+            used_answer_context = True
 
-        if example:
+        if example and not used_answer_context:
             lines.append(f"额外示例：{example}")
 
-        if steps:
+        if steps and not used_answer_context:
             lines.append("可参考步骤：" + "；".join(steps))
 
         blocks.append("\n".join(lines))

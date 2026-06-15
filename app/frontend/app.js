@@ -254,7 +254,9 @@ function renderReferences(references) {
       `
       : '';
 
-    const contentText = item.answer_context || item.content || '';
+    // answer_context 是给提示词用的拼接字段，已包含标题、内容、示例和步骤。
+    // 参考卡片会单独渲染标题、示例和步骤，这里再展示它会造成重复。
+    const contentText = item.content || '';
     const contentHtml = contentText
       ? `<div class="ref-text math-content">${mathTextHtml(contentText)}</div>`
       : '<div class="ref-text math-content">暂无知识内容。</div>';
