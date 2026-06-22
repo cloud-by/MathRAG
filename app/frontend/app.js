@@ -433,13 +433,14 @@ clearChatBtn.addEventListener('click', () => {
       <div class="message-role">助手</div>
       <div class="message-content">
         你好，欢迎来到 MathRAG。你可以先试试这些问题：<br>
-        1. <code>x^2+4x+3=0 怎么解？</code><br>
-        2. <code>平方差公式是什么？</code><br>
-        3. <code>为什么这题可以因式分解？</code><br>
-        4. <code>导数的几何意义是什么？</code>
+        1. 求 \\(\\sin\\left(\\frac{\\pi}{6}\\right)\\) 的值是多少？<br>
+        2. \\(\\tan\\left(-\\frac{23\\pi}{4}\\right)\\) 怎么求？<br>
+        3. 已知角 \\(\\theta\\) 的终边经过点 \\(P(-12,5)\\)，求 \\(\\sin\\theta\\)、\\(\\cos\\theta\\) 和 \\(\\tan\\theta\\)。<br>
+        4. 函数 \\(y=2\\sin\\left(3x+\\frac{\\pi}{4}\\right)\\) 的周期是多少？
       </div>
     </div>
   `;
+  renderMath(chatHistoryEl);
 
   answerBoxEl.className = 'result-card empty-state';
   answerBoxEl.textContent = '提交问题后，这里会显示答案。';
