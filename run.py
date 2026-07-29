@@ -11,7 +11,7 @@ def main() -> None:
         "app.main:app",
         host=settings.APP_HOST,
         port=settings.APP_PORT,
-        reload=getattr(settings, "APP_DEBUG", True),
+        reload=settings.DEBUG,
     )
 
 

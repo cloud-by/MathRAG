@@ -1,0 +1,141 @@
+{
+  "question": "请说明正弦函数的定义，并用 \\(\\sin^2 x+\\cos^2 x=1\\) 验证一个基本关系。",
+  "answer": "正弦函数在单位圆中的定义为：对于任意角 \\(\\alpha\\)，其终边与单位圆交于点 \\(P(x,y)\\)，则 \\(\\sin\\alpha = y\\)。验证 \\(\\sin^2 x + \\cos^2 x = 1\\)：由于点 \\(P\\) 在单位圆上，有 \\(x^2 + y^2 = 1\\)，而 \\(\\cos\\alpha = x\\)，故 \\(\\sin^2\\alpha + \\cos^2\\alpha = y^2 + x^2 = 1\\)。",
+  "steps": [
+    "正弦函数定义：在平面直角坐标系中，以原点为圆心、半径为1的单位圆上，任意角 \\(\\alpha\\) 的终边与单位圆交于点 \\(P(x,y)\\)，则 \\(\\sin\\alpha = y\\)，\\(\\cos\\alpha = x\\)。",
+    "验证基本关系：因为 \\(P\\) 在单位圆上，所以点 \\(P\\) 到原点的距离为1，即 \\(x^2 + y^2 = 1\\)。代入定义得 \\(\\sin^2\\alpha + \\cos^2\\alpha = 1\\)。",
+    "该关系对任意角 \\(\\alpha\\) 成立，是三角函数中最基本的恒等式之一。"
+  ],
+  "used_knowledge": [
+    "任意角三角函数的定义及坐标应用",
+    "同角三角函数的基本关系及应用"
+  ],
+  "related_questions": [
+    "如何利用 \\(\\sin^2 x+\\cos^2 x=1\\) 求其他三角函数值？",
+    "请证明 \\(\\tan^2 x+1=\\sec^2 x\\)。"
+  ],
+  "references": [
+    {
+      "rank": 1,
+      "score": 0.7552168369293213,
+      "index": 3,
+      "chunk_id": "k0004_chunk_0",
+      "source_id": "k0004",
+      "category": "三角函数",
+      "title": "任意角三角函数的定义及坐标应用",
+      "keywords": [
+        "单位圆",
+        "任意角三角函数",
+        "终边上一点",
+        "正弦",
+        "余弦",
+        "正切",
+        "圆周运动"
+      ],
+      "content": "设任意角 \\(\\alpha\\) 的终边与单位圆交于点 \\(P(x,y)\\)，则 \\(\\sin\\alpha=y\\)、\\(\\cos\\alpha=x\\)，当 \\(x\\ne0\\) 时 \\(\\tan\\alpha=\\frac{y}{x}\\)。若终边上任意一点为 \\(P(x,y)\\)，且 \\(r=\\sqrt{x^2+y^2}\\)，则 \\(\\sin\\alpha=\\frac{y}{r}\\)、\\(\\cos\\alpha=\\frac{x}{r}\\)、\\(\\tan\\alpha=\\frac{y}{x}\\)。因此正弦、余弦函数的定义域为 \\(\\mathbb{R}\\)，正切函数要求 \\(\\alpha\\ne\\frac{\\pi}{2}+k\\pi\\)。半径为 \\(R\\) 的圆上，点从 \\(x\\) 轴正半轴出发转过角 \\(\\theta\\) 后的位置为 \\((R\\cos\\theta,R\\sin\\theta)\\)；顺时针匀速运动时可取 \\(\\theta=-\\omega t\\)。",
+      "example": "已知角 \\(\\theta\\) 的终边经过点 \\(P(-12,5)\\)，求 \\(\\theta\\) 的正弦、余弦和正切值。",
+      "steps": [
+        "步骤1：计算点到原点的距离 \\(r=\\sqrt{(-12)^2+5^2}=13\\)",
+        "步骤2：由 \\(\\sin\\theta=\\frac{y}{r}\\)，得 \\(\\sin\\theta=\\frac{5}{13}\\)",
+        "步骤3：由 \\(\\cos\\theta=\\frac{x}{r}\\)，得 \\(\\cos\\theta=-\\frac{12}{13}\\)",
+        "步骤4：由 \\(\\tan\\theta=\\frac{y}{x}\\)，得 \\(\\tan\\theta=-\\frac{5}{12}\\)"
+      ],
+      "difficulty": "easy",
+      "answer_context": "【任意角三角函数的定义及坐标应用】\n类别：三角函数\n难度：简单\n设任意角 \\(\\alpha\\) 的终边与单位圆交于点 \\(P(x,y)\\)，则 \\(\\sin\\alpha=y\\)、\\(\\cos\\alpha=x\\)，当 \\(x\\ne0\\) 时 \\(\\tan\\alpha=\\frac{y}{x}\\)。若终边上任意一点为 \\(P(x,y)\\)，且 \\(r=\\sqrt{x^2+y^2}\\)，则 \\(\\sin\\alpha=\\frac{y}{r}\\)、\\(\\cos\\alpha=\\frac{x}{r}\\)、\\(\\tan\\alpha=\\frac{y}{x}\\)。因此正弦、余弦函数的定义域为 \\(\\mathbb{R}\\)，正切函数要求 \\(\\alpha\\ne\\frac{\\pi}{2}+k\\pi\\)。半径为 \\(R\\) 的圆上，点从 \\(x\\) 轴正半轴出发转过角 \\(\\theta\\) 后的位置为 \\((R\\cos\\theta,R\\sin\\theta)\\)；顺时针匀速运动时可取 \\(\\theta=-\\omega t\\)。\n示例：已知角 \\(\\theta\\) 的终边经过点 \\(P(-12,5)\\)，求 \\(\\theta\\) 的正弦、余弦和正切值。\n参考步骤：\n步骤1：计算点到原点的距离 \\(r=\\sqrt{(-12)^2+5^2}=13\\)\n步骤2：由 \\(\\sin\\theta=\\frac{y}{r}\\)，得 \\(\\sin\\theta=\\frac{5}{13}\\)\n步骤3：由 \\(\\cos\\theta=\\frac{x}{r}\\)，得 \\(\\cos\\theta=-\\frac{12}{13}\\)\n步骤4：由 \\(\\tan\\theta=\\frac{y}{x}\\)，得 \\(\\tan\\theta=-\\frac{5}{12}\\)",
+      "retrieval_text": "知识点类别：三角函数\n知识点标题：任意角三角函数的定义及坐标应用\n关键词：单位圆，任意角三角函数，终边上一点，正弦，余弦，正切，圆周运动\n核心内容：设任意角 \\(\\alpha\\) 的终边与单位圆交于点 \\(P(x,y)\\)，则 \\(\\sin\\alpha=y\\)、\\(\\cos\\alpha=x\\)，当 \\(x\\ne0\\) 时 \\(\\tan\\alpha=\\frac{y}{x}\\)。若终边上任意一点为 \\(P(x,y)\\)，且 \\(r=\\sqrt{x^2+y^2}\\)，则 \\(\\sin\\alpha=\\frac{y}{r}\\)、\\(\\cos\\alpha=\\frac{x}{r}\\)、\\(\\tan\\alpha=\\frac{y}{x}\\)。因此正弦、余弦函数的定义域为 \\(\\mathbb{R}\\)，正切函数要求 \\(\\alpha\\ne\\frac{\\pi}{2}+k\\pi\\)。半径为 \\(R\\) 的圆上，点从 \\(x\\) 轴正半轴出发转过角 \\(\\theta\\) 后的位置为 \\((R\\cos\\theta,R\\sin\\theta)\\)；顺时针匀速运动时可取 \\(\\theta=-\\omega t\\)。\n例题示例：已知角 \\(\\theta\\) 的终边经过点 \\(P(-12,5)\\)，求 \\(\\theta\\) 的正弦、余弦和正切值。\n理解/解题步骤：步骤1：计算点到原点的距离 \\(r=\\sqrt{(-12)^2+5^2}=13\\)；步骤2：由 \\(\\sin\\theta=\\frac{y}{r}\\)，得 \\(\\sin\\theta=\\frac{5}{13}\\)；步骤3：由 \\(\\cos\\theta=\\frac{x}{r}\\)，得 \\(\\cos\\theta=-\\frac{12}{13}\\)；步骤4：由 \\(\\tan\\theta=\\frac{y}{x}\\)，得 \\(\\tan\\theta=-\\frac{5}{12}\\)\n难度：简单",
+      "source_line": 4,
+      "metadata": {
+        "source_file": "math_knowledge_seed.jsonl",
+        "chunk_index": 0,
+        "has_example": true,
+        "has_steps": true,
+        "difficulty": "easy"
+      }
+    },
+    {
+      "rank": 2,
+      "score": 0.7402461767196655,
+      "index": 5,
+      "chunk_id": "k0006_chunk_0",
+      "source_id": "k0006",
+      "category": "三角函数",
+      "title": "同角三角函数的基本关系及应用",
+      "keywords": [
+        "同角三角函数",
+        "平方关系",
+        "商数关系",
+        "三角函数求值",
+        "三角式化简",
+        "恒等式证明"
+      ],
+      "content": "对同一个角 \\(\\alpha\\)，恒有 \\(\\sin^2\\alpha+\\cos^2\\alpha=1\\)；当 \\(\\cos\\alpha\\ne0\\) 时，有 \\(\\tan\\alpha=\\frac{\\sin\\alpha}{\\cos\\alpha}\\)，并可推出 \\(1+\\tan^2\\alpha=\\frac{1}{\\cos^2\\alpha}\\)。已知一个三角函数值求其余值时，先利用平方关系求绝对值，再结合象限确定正负号。化简或证明同角三角式时，可将正切化为正弦与余弦的商，并通过因式分解、通分或整体代换构造基本关系；所有变形都应保证原式和变形后的式子有意义。",
+      "example": "已知 \\(\\tan\\varphi=-\\sqrt{3}\\)，求 \\(\\sin\\varphi\\) 与 \\(\\cos\\varphi\\) 的所有可能值。",
+      "steps": [
+        "步骤1：由 \\(\\tan\\varphi=\\frac{\\sin\\varphi}{\\cos\\varphi}\\)，得 \\(\\sin\\varphi=-\\sqrt{3}\\cos\\varphi\\)",
+        "步骤2：代入 \\(\\sin^2\\varphi+\\cos^2\\varphi=1\\)，得到 \\(3\\cos^2\\varphi+\\cos^2\\varphi=1\\)",
+        "步骤3：解得 \\(\\cos\\varphi=\\pm\\frac{1}{2}\\)",
+        "步骤4：当 \\(\\cos\\varphi=\\frac{1}{2}\\) 时，\\(\\sin\\varphi=-\\frac{\\sqrt{3}}{2}\\)；当 \\(\\cos\\varphi=-\\frac{1}{2}\\) 时，\\(\\sin\\varphi=\\frac{\\sqrt{3}}{2}\\)",
+        "步骤5：所以 \\((\\sin\\varphi,\\cos\\varphi)\\) 为 \\(\\left(-\\frac{\\sqrt{3}}{2},\\frac{1}{2}\\right)\\) 或 \\(\\left(\\frac{\\sqrt{3}}{2},-\\frac{1}{2}\\right)\\)"
+      ],
+      "difficulty": "medium",
+      "answer_context": "【同角三角函数的基本关系及应用】\n类别：三角函数\n难度：中等\n对同一个角 \\(\\alpha\\)，恒有 \\(\\sin^2\\alpha+\\cos^2\\alpha=1\\)；当 \\(\\cos\\alpha\\ne0\\) 时，有 \\(\\tan\\alpha=\\frac{\\sin\\alpha}{\\cos\\alpha}\\)，并可推出 \\(1+\\tan^2\\alpha=\\frac{1}{\\cos^2\\alpha}\\)。已知一个三角函数值求其余值时，先利用平方关系求绝对值，再结合象限确定正负号。化简或证明同角三角式时，可将正切化为正弦与余弦的商，并通过因式分解、通分或整体代换构造基本关系；所有变形都应保证原式和变形后的式子有意义。\n示例：已知 \\(\\tan\\varphi=-\\sqrt{3}\\)，求 \\(\\sin\\varphi\\) 与 \\(\\cos\\varphi\\) 的所有可能值。\n参考步骤：\n步骤1：由 \\(\\tan\\varphi=\\frac{\\sin\\varphi}{\\cos\\varphi}\\)，得 \\(\\sin\\varphi=-\\sqrt{3}\\cos\\varphi\\)\n步骤2：代入 \\(\\sin^2\\varphi+\\cos^2\\varphi=1\\)，得到 \\(3\\cos^2\\varphi+\\cos^2\\varphi=1\\)\n步骤3：解得 \\(\\cos\\varphi=\\pm\\frac{1}{2}\\)\n步骤4：当 \\(\\cos\\varphi=\\frac{1}{2}\\) 时，\\(\\sin\\varphi=-\\frac{\\sqrt{3}}{2}\\)；当 \\(\\cos\\varphi=-\\frac{1}{2}\\) 时，\\(\\sin\\varphi=\\frac{\\sqrt{3}}{2}\\)\n步骤5：所以 \\((\\sin\\varphi,\\cos\\varphi)\\) 为 \\(\\left(-\\frac{\\sqrt{3}}{2},\\frac{1}{2}\\right)\\) 或 \\(\\left(\\frac{\\sqrt{3}}{2},-\\frac{1}{2}\\right)\\)",
+      "retrieval_text": "知识点类别：三角函数\n知识点标题：同角三角函数的基本关系及应用\n关键词：同角三角函数，平方关系，商数关系，三角函数求值，三角式化简，恒等式证明\n核心内容：对同一个角 \\(\\alpha\\)，恒有 \\(\\sin^2\\alpha+\\cos^2\\alpha=1\\)；当 \\(\\cos\\alpha\\ne0\\) 时，有 \\(\\tan\\alpha=\\frac{\\sin\\alpha}{\\cos\\alpha}\\)，并可推出 \\(1+\\tan^2\\alpha=\\frac{1}{\\cos^2\\alpha}\\)。已知一个三角函数值求其余值时，先利用平方关系求绝对值，再结合象限确定正负号。化简或证明同角三角式时，可将正切化为正弦与余弦的商，并通过因式分解、通分或整体代换构造基本关系；所有变形都应保证原式和变形后的式子有意义。\n例题示例：已知 \\(\\tan\\varphi=-\\sqrt{3}\\)，求 \\(\\sin\\varphi\\) 与 \\(\\cos\\varphi\\) 的所有可能值。\n理解/解题步骤：步骤1：由 \\(\\tan\\varphi=\\frac{\\sin\\varphi}{\\cos\\varphi}\\)，得 \\(\\sin\\varphi=-\\sqrt{3}\\cos\\varphi\\)；步骤2：代入 \\(\\sin^2\\varphi+\\cos^2\\varphi=1\\)，得到 \\(3\\cos^2\\varphi+\\cos^2\\varphi=1\\)；步骤3：解得 \\(\\cos\\varphi=\\pm\\frac{1}{2}\\)；步骤4：当 \\(\\cos\\varphi=\\frac{1}{2}\\) 时，\\(\\sin\\varphi=-\\frac{\\sqrt{3}}{2}\\)；当 \\(\\cos\\varphi=-\\frac{1}{2}\\) 时，\\(\\sin\\varphi=\\frac{\\sqrt{3}}{2}\\)；步骤5：所以 \\((\\sin\\varphi,\\cos\\varphi)\\) 为 \\(\\left(-\\frac{\\sqrt{3}}{2},\\frac{1}{2}\\right)\\) 或 \\(\\left(\\frac{\\sqrt{3}}{2},-\\frac{1}{2}\\right)\\)\n难度：中等",
+      "source_line": 6,
+      "metadata": {
+        "source_file": "math_knowledge_seed.jsonl",
+        "chunk_index": 0,
+        "has_example": true,
+        "has_steps": true,
+        "difficulty": "medium"
+      }
+    },
+    {
+      "rank": 3,
+      "score": 0.7133467197418213,
+      "index": 9,
+      "chunk_id": "k0010_chunk_0",
+      "source_id": "k0010",
+      "category": "三角函数",
+      "title": "正弦、余弦型函数的周期与最小正周期",
+      "keywords": [
+        "周期函数",
+        "函数周期",
+        "最小正周期",
+        "正弦函数周期",
+        "余弦函数周期",
+        "周期公式",
+        "复合三角函数",
+        "T=2π/|ω|"
+      ],
+      "content": "设函数 \\(f(x)\\) 的定义域为 \\(D\\)。若存在非零常数 \\(T\\)，使每个 \\(x\\in D\\) 都满足 \\(x+T\\in D\\) 且 \\(f(x+T)=f(x)\\)，则 \\(f(x)\\) 是周期函数，\\(T\\) 是它的一个周期；若所有正周期中存在最小者，则称为最小正周期。验证周期必须对定义域内任意 \\(x\\) 成立，某一个自变量处函数值重复不能说明该数是周期。正弦函数和余弦函数的最小正周期都是 \\(2\\pi\\)。当 \\(A\\ne0\\)、\\(\\omega\\ne0\\) 时，函数 \\(y=A\\sin(\\omega x+\\varphi)\\) 与 \\(y=A\\cos(\\omega x+\\varphi)\\) 的最小正周期均为 \\(T=\\frac{2\\pi}{|\\omega|}\\)；振幅系数 \\(A\\)、相位常数 \\(\\varphi\\) 和竖直平移量不改变周期。求周期时可令内层角增加一个基准周期，即解 \\(|\\omega|T=2\\pi\\)。",
+      "example": "求下列函数的最小正周期：\\((1)\\ y=\\sin\\frac{2}{3}x\\)；\\((2)\\ y=\\frac{1}{2}\\cos4x\\)。",
+      "steps": [
+        "步骤1：对函数 \\(y=\\sin\\frac{2}{3}x\\)，内层角的系数为 \\(\\omega=\\frac{2}{3}\\)。",
+        "步骤2：由 \\(T=\\frac{2\\pi}{|\\omega|}\\)，得 \\(T_1=\\frac{2\\pi}{2/3}=3\\pi\\)。",
+        "步骤3：对函数 \\(y=\\frac{1}{2}\\cos4x\\)，外部系数 \\(\\frac{1}{2}\\) 不影响周期，内层角的系数为 \\(\\omega=4\\)。",
+        "步骤4：由周期公式得 \\(T_2=\\frac{2\\pi}{4}=\\frac{\\pi}{2}\\)。",
+        "步骤5：因此两个函数的最小正周期分别为 \\(3\\pi\\) 和 \\(\\frac{\\pi}{2}\\)。"
+      ],
+      "difficulty": "easy",
+      "answer_context": "【正弦、余弦型函数的周期与最小正周期】\n类别：三角函数\n难度：简单\n设函数 \\(f(x)\\) 的定义域为 \\(D\\)。若存在非零常数 \\(T\\)，使每个 \\(x\\in D\\) 都满足 \\(x+T\\in D\\) 且 \\(f(x+T)=f(x)\\)，则 \\(f(x)\\) 是周期函数，\\(T\\) 是它的一个周期；若所有正周期中存在最小者，则称为最小正周期。验证周期必须对定义域内任意 \\(x\\) 成立，某一个自变量处函数值重复不能说明该数是周期。正弦函数和余弦函数的最小正周期都是 \\(2\\pi\\)。当 \\(A\\ne0\\)、\\(\\omega\\ne0\\) 时，函数 \\(y=A\\sin(\\omega x+\\varphi)\\) 与 \\(y=A\\cos(\\omega x+\\varphi)\\) 的最小正周期均为 \\(T=\\frac{2\\pi}{|\\omega|}\\)；振幅系数 \\(A\\)、相位常数 \\(\\varphi\\) 和竖直平移量不改变周期。求周期时可令内层角增加一个基准周期，即解 \\(|\\omega|T=2\\pi\\)。\n示例：求下列函数的最小正周期：\\((1)\\ y=\\sin\\frac{2}{3}x\\)；\\((2)\\ y=\\frac{1}{2}\\cos4x\\)。\n参考步骤：\n步骤1：对函数 \\(y=\\sin\\frac{2}{3}x\\)，内层角的系数为 \\(\\omega=\\frac{2}{3}\\)。\n步骤2：由 \\(T=\\frac{2\\pi}{|\\omega|}\\)，得 \\(T_1=\\frac{2\\pi}{2/3}=3\\pi\\)。\n步骤3：对函数 \\(y=\\frac{1}{2}\\cos4x\\)，外部系数 \\(\\frac{1}{2}\\) 不影响周期，内层角的系数为 \\(\\omega=4\\)。\n步骤4：由周期公式得 \\(T_2=\\frac{2\\pi}{4}=\\frac{\\pi}{2}\\)。\n步骤5：因此两个函数的最小正周期分别为 \\(3\\pi\\) 和 \\(\\frac{\\pi}{2}\\)。",
+      "retrieval_text": "知识点类别：三角函数\n知识点标题：正弦、余弦型函数的周期与最小正周期\n关键词：周期函数，函数周期，最小正周期，正弦函数周期，余弦函数周期，周期公式，复合三角函数，T=2π/|ω|\n核心内容：设函数 \\(f(x)\\) 的定义域为 \\(D\\)。若存在非零常数 \\(T\\)，使每个 \\(x\\in D\\) 都满足 \\(x+T\\in D\\) 且 \\(f(x+T)=f(x)\\)，则 \\(f(x)\\) 是周期函数，\\(T\\) 是它的一个周期；若所有正周期中存在最小者，则称为最小正周期。验证周期必须对定义域内任意 \\(x\\) 成立，某一个自变量处函数值重复不能说明该数是周期。正弦函数和余弦函数的最小正周期都是 \\(2\\pi\\)。当 \\(A\\ne0\\)、\\(\\omega\\ne0\\) 时，函数 \\(y=A\\sin(\\omega x+\\varphi)\\) 与 \\(y=A\\cos(\\omega x+\\varphi)\\) 的最小正周期均为 \\(T=\\frac{2\\pi}{|\\omega|}\\)；振幅系数 \\(A\\)、相位常数 \\(\\varphi\\) 和竖直平移量不改变周期。求周期时可令内层角增加一个基准周期，即解 \\(|\\omega|T=2\\pi\\)。\n例题示例：求下列函数的最小正周期：\\((1)\\ y=\\sin\\frac{2}{3}x\\)；\\((2)\\ y=\\frac{1}{2}\\cos4x\\)。\n理解/解题步骤：步骤1：对函数 \\(y=\\sin\\frac{2}{3}x\\)，内层角的系数为 \\(\\omega=\\frac{2}{3}\\)。；步骤2：由 \\(T=\\frac{2\\pi}{|\\omega|}\\)，得 \\(T_1=\\frac{2\\pi}{2/3}=3\\pi\\)。；步骤3：对函数 \\(y=\\frac{1}{2}\\cos4x\\)，外部系数 \\(\\frac{1}{2}\\) 不影响周期，内层角的系数为 \\(\\omega=4\\)。；步骤4：由周期公式得 \\(T_2=\\frac{2\\pi}{4}=\\frac{\\pi}{2}\\)。；步骤5：因此两个函数的最小正周期分别为 \\(3\\pi\\) 和 \\(\\frac{\\pi}{2}\\)。\n难度：简单",
+      "source_line": 10,
+      "metadata": {
+        "source_file": "math_knowledge_seed.jsonl",
+        "chunk_index": 0,
+        "has_example": true,
+        "has_steps": true,
+        "difficulty": "easy"
+      }
+    }
+  ],
+  "agentic_plan": {
+    "strategy": "分别检索正弦函数的定义（单位圆与直角三角形两种表述）以及恒等式 \\(\\sin^2 x + \\cos^2 x = 1\\) 的推导过程，确保覆盖核心概念与基本验证。",
+    "retrieval_queries": [
+      "正弦函数的定义 单位圆 直角三角形 对边 斜边",
+      "证明 \\(\\sin^2 x + \\cos^2 x = 1\\) 单位圆 勾股定理",
+      "正弦函数定义及平方和恒等式推导"
+    ]
+  },
+  "reasoning_content": null
+}

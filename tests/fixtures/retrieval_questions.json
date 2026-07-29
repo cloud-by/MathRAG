@@ -1,0 +1,163 @@
+{
+  "schema_version": "1.0",
+  "dataset_sha256": "b87355849f828ae219ba4e03315436d65a1fce749db96740ae645a74c231e4b0",
+  "top_k": 3,
+  "questions": [
+    {
+      "id": "rq-0001",
+      "question": "与一个角终边相同的所有角，怎样用整数参数表示？",
+      "expected_legacy_ids": ["k0001"],
+      "rationale": "直接对应同终边角的通式。"
+    },
+    {
+      "id": "rq-0002",
+      "question": "角度制与弧度制之间如何换算？",
+      "expected_legacy_ids": ["k0002"],
+      "rationale": "直接询问角度与弧度的换算规则。"
+    },
+    {
+      "id": "rq-0003",
+      "question": "已知圆心角的弧度数和半径，怎样计算弧长与扇形面积？",
+      "expected_legacy_ids": ["k0003"],
+      "rationale": "同时命中弧长和扇形面积公式。"
+    },
+    {
+      "id": "rq-0004",
+      "question": "角的终边经过点 P(x,y) 时，正弦、余弦和正切如何定义？",
+      "expected_legacy_ids": ["k0004"],
+      "rationale": "对应终边上一点的任意角三角函数定义。"
+    },
+    {
+      "id": "rq-0005",
+      "question": "怎样根据角所在象限判断正弦、余弦和正切的符号？",
+      "expected_legacy_ids": ["k0005"],
+      "rationale": "对应任意角三角函数的象限符号。"
+    },
+    {
+      "id": "rq-0006",
+      "question": "同一个角的正弦、余弦、正切之间有哪些基本关系？",
+      "expected_legacy_ids": ["k0006"],
+      "rationale": "对应平方关系与商数关系。"
+    },
+    {
+      "id": "rq-0007",
+      "question": "利用诱导公式化简负角、半周角和余角的三角函数时有什么规律？",
+      "expected_legacy_ids": ["k0007"],
+      "rationale": "覆盖诱导公式的基本类型和记忆规律。"
+    },
+    {
+      "id": "rq-0008",
+      "question": "如何把任意角的三角函数化成锐角三角函数并完成求值？",
+      "expected_legacy_ids": ["k0008"],
+      "rationale": "对应诱导公式的综合求值流程。"
+    },
+    {
+      "id": "rq-0009",
+      "question": "怎样用五个关键点画出正弦函数和余弦函数的图象？",
+      "expected_legacy_ids": ["k0009"],
+      "rationale": "直接对应正弦、余弦曲线的五点法。"
+    },
+    {
+      "id": "rq-0010",
+      "question": "怎样求正弦型或余弦型函数的周期与最小正周期？",
+      "expected_legacy_ids": ["k0010"],
+      "rationale": "直接询问周期函数与最小正周期。"
+    },
+    {
+      "id": "rq-0011",
+      "question": "如何判断三角函数的奇偶性以及图象关于哪里对称？",
+      "expected_legacy_ids": ["k0011"],
+      "rationale": "对应奇偶性和图象对称性。"
+    },
+    {
+      "id": "rq-0012",
+      "question": "如何利用正弦、余弦函数的单调区间求最值和值域？",
+      "expected_legacy_ids": ["k0012"],
+      "rationale": "对应单调性、最值和值域的综合应用。"
+    },
+    {
+      "id": "rq-0013",
+      "question": "正切函数的定义域、周期、单调性和值域分别是什么？",
+      "expected_legacy_ids": ["k0013"],
+      "rationale": "集中询问正切函数图象的核心性质。"
+    },
+    {
+      "id": "rq-0014",
+      "question": "已知两个角的三角函数值，怎样用两角和差公式求它们和或差的三角函数值？",
+      "expected_legacy_ids": ["k0014"],
+      "rationale": "对应两角和与差公式的求值场景。"
+    },
+    {
+      "id": "rq-0015",
+      "question": "正弦、余弦和正切的二倍角公式是什么，怎样用于倍角求值？",
+      "expected_legacy_ids": ["k0015"],
+      "rationale": "直接对应三类二倍角公式。"
+    },
+    {
+      "id": "rq-0016",
+      "question": "使用半角公式时，怎样根据角的范围确定平方根前的正负号？",
+      "expected_legacy_ids": ["k0016"],
+      "rationale": "突出半角公式中由角范围定号的问题。"
+    },
+    {
+      "id": "rq-0017",
+      "question": "积化和差与和差化积公式怎样用于三角恒等式化简？",
+      "expected_legacy_ids": ["k0017"],
+      "rationale": "对应两组恒等变换公式。"
+    },
+    {
+      "id": "rq-0018",
+      "question": "怎样用辅助角公式把 a sin x+b cos x 化为一个正弦函数并求最值？",
+      "expected_legacy_ids": ["k0018"],
+      "rationale": "对应辅助角化简和最值计算。"
+    },
+    {
+      "id": "rq-0019",
+      "question": "匀速圆周运动中，如何根据半径、角速度和初始位置建立高度的正弦模型？",
+      "expected_legacy_ids": ["k0019"],
+      "rationale": "对应圆周运动的正弦高度建模。"
+    },
+    {
+      "id": "rq-0020",
+      "question": "函数 y=A sin(ωx+φ)+b 中各参数有什么意义，图象如何变换？",
+      "expected_legacy_ids": ["k0020"],
+      "rationale": "直接询问正弦型函数的参数和图象变换。"
+    },
+    {
+      "id": "rq-0021",
+      "question": "如何选择一个周期区间，并用五点法画出正弦型函数的图象？",
+      "expected_legacy_ids": ["k0021"],
+      "rationale": "对应正弦型函数一个周期图象的五点法。"
+    },
+    {
+      "id": "rq-0022",
+      "question": "圆周上两点的半径夹角已知时，怎样用正弦表示两点间的弦长？",
+      "expected_legacy_ids": ["k0022"],
+      "rationale": "对应圆周运动中的弦长与距离模型。"
+    },
+    {
+      "id": "rq-0023",
+      "question": "面对周期变化的实际数据，怎样由最大值、最小值和周期确定正弦型模型参数？",
+      "expected_legacy_ids": ["k0023"],
+      "rationale": "对应周期现象的正弦型拟合与参数确定。"
+    },
+    {
+      "id": "rq-0024",
+      "question": "简谐运动中的振幅、周期、频率、相位和初相分别表示什么？",
+      "expected_legacy_ids": ["k0024"],
+      "rationale": "对应简谐运动模型各参数的物理意义。"
+    },
+    {
+      "id": "rq-0025",
+      "question": "正弦模型达到给定阈值的时间段应如何求解并换算成实际时刻？",
+      "expected_legacy_ids": ["k0025"],
+      "rationale": "对应正弦模型的阈值时间与预测。"
+    },
+    {
+      "id": "rq-0026",
+      "question": "周期波向右传播半个周期后，波形和固定质点分别怎样变化？",
+      "expected_legacy_ids": ["k0026"],
+      "rationale": "对应波形平移与质点振动的半周期区别。"
+    }
+  ]
+}

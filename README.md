@@ -607,10 +607,15 @@ app/frontend/app.js
 
 ## Docker 部署
 
-构建并启动：
+### 使用远端镜像
+
+`docker-compose.yml` 仅声明远端镜像 `cloudby/mathrag:latest`，并设置了 `pull_policy: always`；它不会使用仓库中的 `Dockerfile` 构建本地源码。
+
+拉取远端镜像并启动：
 
 ```bash
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 查看日志：
@@ -625,13 +630,22 @@ docker compose logs -f mathrag
 docker compose down
 ```
 
+### 使用当前源码构建本地镜像
+
+需要运行当前工作区源码时，直接使用 `Dockerfile` 构建本地镜像，再通过 `docker run` 启动：
+
+```bash
+docker build -t mathrag:local .
+docker run -d --name mathrag-local --env-file .env -p 127.0.0.1:8000:8000 mathrag:local
+```
+
 默认端口映射：
 
 ```text
 127.0.0.1:8000 -> container:8000
 ```
 
-`docker-compose.yml` 默认使用 `.env` 注入环境变量。
+两种启动方式都使用 `.env` 注入环境变量；本地镜像方式可用 `docker logs -f mathrag-local` 查看日志。
 
 ---
 

@@ -1,0 +1,24 @@
+{
+  "records": [
+    {
+      "id": "k0027",
+      "category": "trigonometry",
+      "title": "正弦函数的定义域和值域",
+      "keywords": [
+        "正弦函数",
+        "定义域",
+        "值域"
+      ],
+      "content": "正弦函数 \\( y = \\sin x \\) 的定义域为全体实数 \\( \\mathbb{R} \\)，值域为闭区间 \\([-1, 1]\\)。这意味着任何实数作为输入，函数值都在 -1 到 1 之间。",
+      "example": "例如，\\(\\sin 0 = 0\\)，\\(\\sin \\frac{\\pi}{2} = 1\\)，都在值域内。",
+      "steps": [
+        "确定自变量 \\(x\\) 可以取任意实数，即定义域为 \\(\\mathbb{R}\\)。",
+        "根据单位圆上纵坐标的范围，确定 \\(\\sin x\\) 的取值范围为 \\([-1, 1]\\)，即值域。"
+      ],
+      "difficulty": "easy"
+    }
+  ],
+  "saved_count": 0,
+  "knowledge_path": "C:\\Users\\cloudby\\.codex\\visualizations\\2026\\07\\29\\019facba-d8be-7e81-b1bc-c1df33c4cdcf\\MathRAG-m0-baseline\\data\\raw\\math_knowledge_seed.jsonl",
+  "next_steps": []
+}

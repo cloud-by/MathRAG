@@ -1,0 +1,873 @@
+{
+  "schema_version": "1.0",
+  "started_at": "2026-07-29T08:43:06.132082Z",
+  "finished_at": "2026-07-29T08:43:14.585285Z",
+  "fixture": {
+    "path": "tests/fixtures/retrieval_questions.json",
+    "schema_version": "1.0",
+    "dataset_sha256": "b87355849f828ae219ba4e03315436d65a1fce749db96740ae645a74c231e4b0",
+    "top_k": 3
+  },
+  "embedding": {
+    "model": "text-embedding-v4",
+    "dimensions": 1024,
+    "batch_size": 10,
+    "timeout_seconds": 60,
+    "normalize": true,
+    "similarity": "inner_product",
+    "provider_origin_sha256": "ec1f29107de2c3a3df64b95fe366d7c640c5a610fdc5b6804611630835b4dafc"
+  },
+  "artifacts": {
+    "faiss_index": {
+      "path": "data/index/faiss.index",
+      "sha256": "e2520504ff2b392bbb56aea792046a752a217a4abf75ca8dec516fd219149192"
+    },
+    "id_map": {
+      "path": "data/index/id_map.json",
+      "sha256": "6fe97be89ad8398d4ed636545b4d7939b5832f93c5602a2d65b4a40781cf8331"
+    },
+    "chunk_file": {
+      "path": "data/processed/kb_chunks.jsonl",
+      "sha256": "a0334a626d7e54ce04a447861af1616da26ad8b012d81f6720aa1d404539e5aa"
+    }
+  },
+  "summary": {
+    "total_questions": 26,
+    "expected_hit_count": 26,
+    "expected_hit_rate": 1.0
+  },
+  "questions": [
+    {
+      "id": "rq-0001",
+      "question": "与一个角终边相同的所有角，怎样用整数参数表示？",
+      "expected_legacy_ids": [
+        "k0001"
+      ],
+      "rationale": "直接对应同终边角的通式。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0001_chunk_0",
+          "source_id": "k0001",
+          "title": "任意角及其终边关系",
+          "score": 0.8119906187057495
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0002_chunk_0",
+          "source_id": "k0002",
+          "title": "弧度制与角度换算",
+          "score": 0.7306956052780151
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0005_chunk_0",
+          "source_id": "k0005",
+          "title": "任意角三角函数的符号与周期性",
+          "score": 0.6955161094665527
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0002",
+      "question": "角度制与弧度制之间如何换算？",
+      "expected_legacy_ids": [
+        "k0002"
+      ],
+      "rationale": "直接询问角度与弧度的换算规则。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0002_chunk_0",
+          "source_id": "k0002",
+          "title": "弧度制与角度换算",
+          "score": 0.8271138668060303
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0003_chunk_0",
+          "source_id": "k0003",
+          "title": "弧长与扇形面积公式",
+          "score": 0.6713255643844604
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0007_chunk_0",
+          "source_id": "k0007",
+          "title": "诱导公式",
+          "score": 0.6244684457778931
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0003",
+      "question": "已知圆心角的弧度数和半径，怎样计算弧长与扇形面积？",
+      "expected_legacy_ids": [
+        "k0003"
+      ],
+      "rationale": "同时命中弧长和扇形面积公式。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0003_chunk_0",
+          "source_id": "k0003",
+          "title": "弧长与扇形面积公式",
+          "score": 0.8960325717926025
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0002_chunk_0",
+          "source_id": "k0002",
+          "title": "弧度制与角度换算",
+          "score": 0.6922650337219238
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0022_chunk_0",
+          "source_id": "k0022",
+          "title": "圆周运动中的弦长与距离模型",
+          "score": 0.644093930721283
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0004",
+      "question": "角的终边经过点 P(x,y) 时，正弦、余弦和正切如何定义？",
+      "expected_legacy_ids": [
+        "k0004"
+      ],
+      "rationale": "对应终边上一点的任意角三角函数定义。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0004_chunk_0",
+          "source_id": "k0004",
+          "title": "任意角三角函数的定义及坐标应用",
+          "score": 0.8607414960861206
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0005_chunk_0",
+          "source_id": "k0005",
+          "title": "任意角三角函数的符号与周期性",
+          "score": 0.7713279724121094
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0006_chunk_0",
+          "source_id": "k0006",
+          "title": "同角三角函数的基本关系及应用",
+          "score": 0.7392995357513428
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0005",
+      "question": "怎样根据角所在象限判断正弦、余弦和正切的符号？",
+      "expected_legacy_ids": [
+        "k0005"
+      ],
+      "rationale": "对应任意角三角函数的象限符号。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0005_chunk_0",
+          "source_id": "k0005",
+          "title": "任意角三角函数的符号与周期性",
+          "score": 0.8290156126022339
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0004_chunk_0",
+          "source_id": "k0004",
+          "title": "任意角三角函数的定义及坐标应用",
+          "score": 0.7427439093589783
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0016_chunk_0",
+          "source_id": "k0016",
+          "title": "半角公式与角范围定号",
+          "score": 0.7011871337890625
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0006",
+      "question": "同一个角的正弦、余弦、正切之间有哪些基本关系？",
+      "expected_legacy_ids": [
+        "k0006"
+      ],
+      "rationale": "对应平方关系与商数关系。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0006_chunk_0",
+          "source_id": "k0006",
+          "title": "同角三角函数的基本关系及应用",
+          "score": 0.7982043623924255
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0004_chunk_0",
+          "source_id": "k0004",
+          "title": "任意角三角函数的定义及坐标应用",
+          "score": 0.7468312382698059
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0005_chunk_0",
+          "source_id": "k0005",
+          "title": "任意角三角函数的符号与周期性",
+          "score": 0.714573860168457
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0007",
+      "question": "利用诱导公式化简负角、半周角和余角的三角函数时有什么规律？",
+      "expected_legacy_ids": [
+        "k0007"
+      ],
+      "rationale": "覆盖诱导公式的基本类型和记忆规律。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0007_chunk_0",
+          "source_id": "k0007",
+          "title": "诱导公式",
+          "score": 0.8646203875541687
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0008_chunk_0",
+          "source_id": "k0008",
+          "title": "诱导公式的综合应用",
+          "score": 0.7820653915405273
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0016_chunk_0",
+          "source_id": "k0016",
+          "title": "半角公式与角范围定号",
+          "score": 0.7685078382492065
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0008",
+      "question": "如何把任意角的三角函数化成锐角三角函数并完成求值？",
+      "expected_legacy_ids": [
+        "k0008"
+      ],
+      "rationale": "对应诱导公式的综合求值流程。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0008_chunk_0",
+          "source_id": "k0008",
+          "title": "诱导公式的综合应用",
+          "score": 0.7963831424713135
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0006_chunk_0",
+          "source_id": "k0006",
+          "title": "同角三角函数的基本关系及应用",
+          "score": 0.7741239070892334
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0004_chunk_0",
+          "source_id": "k0004",
+          "title": "任意角三角函数的定义及坐标应用",
+          "score": 0.7502544522285461
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0009",
+      "question": "怎样用五个关键点画出正弦函数和余弦函数的图象？",
+      "expected_legacy_ids": [
+        "k0009"
+      ],
+      "rationale": "直接对应正弦、余弦曲线的五点法。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0009_chunk_0",
+          "source_id": "k0009",
+          "title": "正弦、余弦函数图象与五点法",
+          "score": 0.895975649356842
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0021_chunk_0",
+          "source_id": "k0021",
+          "title": "五点法绘制正弦型函数一个周期图象",
+          "score": 0.8471052646636963
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0020_chunk_0",
+          "source_id": "k0020",
+          "title": "正弦型函数的参数意义与图象变换",
+          "score": 0.709317684173584
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0010",
+      "question": "怎样求正弦型或余弦型函数的周期与最小正周期？",
+      "expected_legacy_ids": [
+        "k0010"
+      ],
+      "rationale": "直接询问周期函数与最小正周期。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0010_chunk_0",
+          "source_id": "k0010",
+          "title": "正弦、余弦型函数的周期与最小正周期",
+          "score": 0.9137421250343323
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0023_chunk_0",
+          "source_id": "k0023",
+          "title": "周期现象的正弦型建模与参数确定",
+          "score": 0.7545306086540222
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0021_chunk_0",
+          "source_id": "k0021",
+          "title": "五点法绘制正弦型函数一个周期图象",
+          "score": 0.7312521934509277
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0011",
+      "question": "如何判断三角函数的奇偶性以及图象关于哪里对称？",
+      "expected_legacy_ids": [
+        "k0011"
+      ],
+      "rationale": "对应奇偶性和图象对称性。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0011_chunk_0",
+          "source_id": "k0011",
+          "title": "三角函数的奇偶性与图象对称性",
+          "score": 0.8871167898178101
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0005_chunk_0",
+          "source_id": "k0005",
+          "title": "任意角三角函数的符号与周期性",
+          "score": 0.7039919495582581
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0009_chunk_0",
+          "source_id": "k0009",
+          "title": "正弦、余弦函数图象与五点法",
+          "score": 0.648642897605896
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0012",
+      "question": "如何利用正弦、余弦函数的单调区间求最值和值域？",
+      "expected_legacy_ids": [
+        "k0012"
+      ],
+      "rationale": "对应单调性、最值和值域的综合应用。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0012_chunk_0",
+          "source_id": "k0012",
+          "title": "正弦、余弦函数的单调性、最值与值域",
+          "score": 0.8609431982040405
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0018_chunk_0",
+          "source_id": "k0018",
+          "title": "辅助角化简与三角函数式最值",
+          "score": 0.7415978908538818
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0010_chunk_0",
+          "source_id": "k0010",
+          "title": "正弦、余弦型函数的周期与最小正周期",
+          "score": 0.7311968803405762
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0013",
+      "question": "正切函数的定义域、周期、单调性和值域分别是什么？",
+      "expected_legacy_ids": [
+        "k0013"
+      ],
+      "rationale": "集中询问正切函数图象的核心性质。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0013_chunk_0",
+          "source_id": "k0013",
+          "title": "正切函数图象及正切型函数的性质",
+          "score": 0.8410676717758179
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0005_chunk_0",
+          "source_id": "k0005",
+          "title": "任意角三角函数的符号与周期性",
+          "score": 0.7615143060684204
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0004_chunk_0",
+          "source_id": "k0004",
+          "title": "任意角三角函数的定义及坐标应用",
+          "score": 0.7598927021026611
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0014",
+      "question": "已知两个角的三角函数值，怎样用两角和差公式求它们和或差的三角函数值？",
+      "expected_legacy_ids": [
+        "k0014"
+      ],
+      "rationale": "对应两角和与差公式的求值场景。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0014_chunk_0",
+          "source_id": "k0014",
+          "title": "两角和与差公式及已知三角值求值",
+          "score": 0.9049944877624512
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0017_chunk_0",
+          "source_id": "k0017",
+          "title": "积化和差与和差化积公式",
+          "score": 0.7762941122055054
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0006_chunk_0",
+          "source_id": "k0006",
+          "title": "同角三角函数的基本关系及应用",
+          "score": 0.7649399042129517
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0015",
+      "question": "正弦、余弦和正切的二倍角公式是什么，怎样用于倍角求值？",
+      "expected_legacy_ids": [
+        "k0015"
+      ],
+      "rationale": "直接对应三类二倍角公式。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0015_chunk_0",
+          "source_id": "k0015",
+          "title": "二倍角公式及倍角求值",
+          "score": 0.8958478569984436
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0014_chunk_0",
+          "source_id": "k0014",
+          "title": "两角和与差公式及已知三角值求值",
+          "score": 0.7731490135192871
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0006_chunk_0",
+          "source_id": "k0006",
+          "title": "同角三角函数的基本关系及应用",
+          "score": 0.75662761926651
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0016",
+      "question": "使用半角公式时，怎样根据角的范围确定平方根前的正负号？",
+      "expected_legacy_ids": [
+        "k0016"
+      ],
+      "rationale": "突出半角公式中由角范围定号的问题。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0016_chunk_0",
+          "source_id": "k0016",
+          "title": "半角公式与角范围定号",
+          "score": 0.8238135576248169
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0007_chunk_0",
+          "source_id": "k0007",
+          "title": "诱导公式",
+          "score": 0.7290220260620117
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0005_chunk_0",
+          "source_id": "k0005",
+          "title": "任意角三角函数的符号与周期性",
+          "score": 0.7127270102500916
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0017",
+      "question": "积化和差与和差化积公式怎样用于三角恒等式化简？",
+      "expected_legacy_ids": [
+        "k0017"
+      ],
+      "rationale": "对应两组恒等变换公式。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0017_chunk_0",
+          "source_id": "k0017",
+          "title": "积化和差与和差化积公式",
+          "score": 0.8327704668045044
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0014_chunk_0",
+          "source_id": "k0014",
+          "title": "两角和与差公式及已知三角值求值",
+          "score": 0.7034028768539429
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0008_chunk_0",
+          "source_id": "k0008",
+          "title": "诱导公式的综合应用",
+          "score": 0.6408944129943848
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0018",
+      "question": "怎样用辅助角公式把 a sin x+b cos x 化为一个正弦函数并求最值？",
+      "expected_legacy_ids": [
+        "k0018"
+      ],
+      "rationale": "对应辅助角化简和最值计算。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0018_chunk_0",
+          "source_id": "k0018",
+          "title": "辅助角化简与三角函数式最值",
+          "score": 0.9225345849990845
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0012_chunk_0",
+          "source_id": "k0012",
+          "title": "正弦、余弦函数的单调性、最值与值域",
+          "score": 0.7515363693237305
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0008_chunk_0",
+          "source_id": "k0008",
+          "title": "诱导公式的综合应用",
+          "score": 0.7185719013214111
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0019",
+      "question": "匀速圆周运动中，如何根据半径、角速度和初始位置建立高度的正弦模型？",
+      "expected_legacy_ids": [
+        "k0019"
+      ],
+      "rationale": "对应圆周运动的正弦高度建模。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0019_chunk_0",
+          "source_id": "k0019",
+          "title": "匀速圆周运动的正弦高度模型",
+          "score": 0.8642182350158691
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0022_chunk_0",
+          "source_id": "k0022",
+          "title": "圆周运动中的弦长与距离模型",
+          "score": 0.711925745010376
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0024_chunk_0",
+          "source_id": "k0024",
+          "title": "简谐运动的振幅周期频率与相位",
+          "score": 0.6995089054107666
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0020",
+      "question": "函数 y=A sin(ωx+φ)+b 中各参数有什么意义，图象如何变换？",
+      "expected_legacy_ids": [
+        "k0020"
+      ],
+      "rationale": "直接询问正弦型函数的参数和图象变换。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0020_chunk_0",
+          "source_id": "k0020",
+          "title": "正弦型函数的参数意义与图象变换",
+          "score": 0.8266124129295349
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0023_chunk_0",
+          "source_id": "k0023",
+          "title": "周期现象的正弦型建模与参数确定",
+          "score": 0.7079501152038574
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0009_chunk_0",
+          "source_id": "k0009",
+          "title": "正弦、余弦函数图象与五点法",
+          "score": 0.6982542872428894
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0021",
+      "question": "如何选择一个周期区间，并用五点法画出正弦型函数的图象？",
+      "expected_legacy_ids": [
+        "k0021"
+      ],
+      "rationale": "对应正弦型函数一个周期图象的五点法。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0021_chunk_0",
+          "source_id": "k0021",
+          "title": "五点法绘制正弦型函数一个周期图象",
+          "score": 0.885398268699646
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0009_chunk_0",
+          "source_id": "k0009",
+          "title": "正弦、余弦函数图象与五点法",
+          "score": 0.8286603689193726
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0023_chunk_0",
+          "source_id": "k0023",
+          "title": "周期现象的正弦型建模与参数确定",
+          "score": 0.7300739288330078
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0022",
+      "question": "圆周上两点的半径夹角已知时，怎样用正弦表示两点间的弦长？",
+      "expected_legacy_ids": [
+        "k0022"
+      ],
+      "rationale": "对应圆周运动中的弦长与距离模型。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0022_chunk_0",
+          "source_id": "k0022",
+          "title": "圆周运动中的弦长与距离模型",
+          "score": 0.7494891881942749
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0003_chunk_0",
+          "source_id": "k0003",
+          "title": "弧长与扇形面积公式",
+          "score": 0.7350304126739502
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0016_chunk_0",
+          "source_id": "k0016",
+          "title": "半角公式与角范围定号",
+          "score": 0.6722269654273987
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0023",
+      "question": "面对周期变化的实际数据，怎样由最大值、最小值和周期确定正弦型模型参数？",
+      "expected_legacy_ids": [
+        "k0023"
+      ],
+      "rationale": "对应周期现象的正弦型拟合与参数确定。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0023_chunk_0",
+          "source_id": "k0023",
+          "title": "周期现象的正弦型建模与参数确定",
+          "score": 0.7818320989608765
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0010_chunk_0",
+          "source_id": "k0010",
+          "title": "正弦、余弦型函数的周期与最小正周期",
+          "score": 0.7096576690673828
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0025_chunk_0",
+          "source_id": "k0025",
+          "title": "正弦模型中的阈值时间与实际预测",
+          "score": 0.6778784990310669
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0024",
+      "question": "简谐运动中的振幅、周期、频率、相位和初相分别表示什么？",
+      "expected_legacy_ids": [
+        "k0024"
+      ],
+      "rationale": "对应简谐运动模型各参数的物理意义。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0024_chunk_0",
+          "source_id": "k0024",
+          "title": "简谐运动的振幅周期频率与相位",
+          "score": 0.8353198170661926
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0026_chunk_0",
+          "source_id": "k0026",
+          "title": "周期波动中的相位平移与半周期判断",
+          "score": 0.657782793045044
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0019_chunk_0",
+          "source_id": "k0019",
+          "title": "匀速圆周运动的正弦高度模型",
+          "score": 0.6305791735649109
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0025",
+      "question": "正弦模型达到给定阈值的时间段应如何求解并换算成实际时刻？",
+      "expected_legacy_ids": [
+        "k0025"
+      ],
+      "rationale": "对应正弦模型的阈值时间与预测。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0025_chunk_0",
+          "source_id": "k0025",
+          "title": "正弦模型中的阈值时间与实际预测",
+          "score": 0.7810635566711426
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0023_chunk_0",
+          "source_id": "k0023",
+          "title": "周期现象的正弦型建模与参数确定",
+          "score": 0.6535430550575256
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0019_chunk_0",
+          "source_id": "k0019",
+          "title": "匀速圆周运动的正弦高度模型",
+          "score": 0.6125494837760925
+        }
+      ],
+      "expected_hit": true
+    },
+    {
+      "id": "rq-0026",
+      "question": "周期波向右传播半个周期后，波形和固定质点分别怎样变化？",
+      "expected_legacy_ids": [
+        "k0026"
+      ],
+      "rationale": "对应波形平移与质点振动的半周期区别。",
+      "results": [
+        {
+          "rank": 1,
+          "chunk_id": "k0026_chunk_0",
+          "source_id": "k0026",
+          "title": "周期波动中的相位平移与半周期判断",
+          "score": 0.8095375299453735
+        },
+        {
+          "rank": 2,
+          "chunk_id": "k0024_chunk_0",
+          "source_id": "k0024",
+          "title": "简谐运动的振幅周期频率与相位",
+          "score": 0.5716512203216553
+        },
+        {
+          "rank": 3,
+          "chunk_id": "k0020_chunk_0",
+          "source_id": "k0020",
+          "title": "正弦型函数的参数意义与图象变换",
+          "score": 0.5155342817306519
+        }
+      ],
+      "expected_hit": true
+    }
+  ]
+}
