@@ -7,7 +7,9 @@ import json
 from collections.abc import Sequence
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+
+from app.modules.knowledge.errors import DuplicateLegacyIdError
 
 
 _DIGEST_PATTERN = r"^[0-9a-f]{64}$"
@@ -25,7 +27,7 @@ _CONSISTENT_FIELDS = (
 class LegacyKnowledgeItemInput(BaseModel):
     """原始 JSONL 中的一条旧知识条目。"""
 
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, strict=True)
 
     id: str = Field(min_length=1, max_length=64)
     category: str = Field(min_length=1, max_length=128)
@@ -40,7 +42,7 @@ class LegacyKnowledgeItemInput(BaseModel):
 class LegacyKnowledgeChunkInput(BaseModel):
     """处理后 JSONL 中的一条旧知识分块。"""
 
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, strict=True)
 
     chunk_id: str = Field(min_length=1, max_length=128)
     source_id: str = Field(min_length=1, max_length=64)
@@ -54,7 +56,17 @@ class LegacyKnowledgeChunkInput(BaseModel):
     source_line: int = Field(ge=1)
     retrieval_text: str = Field(min_length=1)
     answer_context: str = Field(min_length=1)
-    metadata: dict[str, object]
+    metadata: dict[str, JsonValue]
+
+    @field_validator("metadata")
+    @classmethod
+    def validate_json_metadata(cls, value: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """拒绝 JSON 规范不支持的非有限浮点数。"""
+        try:
+            json.dumps(value, ensure_ascii=False, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("metadata 必须仅包含 JSON 可序列化的有限值") from exc
+        return value
 
 
 class LegacyKnowledgeBundle(BaseModel):
@@ -79,12 +91,16 @@ class LegacyKnowledgeBundle(BaseModel):
 
     def persistent_payload(self) -> dict[str, object]:
         """返回用于持久化和幂等比较的稳定载荷。"""
-        metadata = {
-            **self.chunk.metadata,
-            "legacy_chunk_id": self.chunk.chunk_id,
-            "legacy_source_id": self.chunk.source_id,
-            "source_line": self.chunk.source_line,
-        }
+        metadata: dict[str, object] = json.loads(
+            json.dumps(self.chunk.metadata, ensure_ascii=False, allow_nan=False)
+        )
+        metadata.update(
+            {
+                "legacy_chunk_id": self.chunk.chunk_id,
+                "legacy_source_id": self.chunk.source_id,
+                "source_line": self.chunk.source_line,
+            }
+        )
         return {
             "item": self.item.model_dump(mode="json"),
             "chunk": {
@@ -102,6 +118,11 @@ class LegacyKnowledgeBundle(BaseModel):
 
 def collection_sha256(bundles: Sequence[LegacyKnowledgeBundle]) -> str:
     """按旧条目 ID 排序后计算迁移集合的稳定摘要。"""
+    ids = [bundle.item.id for bundle in bundles]
+    duplicate_ids = sorted({item_id for item_id in ids if ids.count(item_id) > 1})
+    if duplicate_ids:
+        raise DuplicateLegacyIdError(f"发现重复的旧知识 ID: {', '.join(duplicate_ids)}")
+
     payloads = [bundle.persistent_payload() for bundle in sorted(bundles, key=lambda bundle: bundle.item.id)]
     return _sha256_json(payloads)
 
@@ -130,5 +151,6 @@ def _sha256_json(value: object) -> str:
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
+        allow_nan=False,
     ).encode("utf-8")
     return hashlib.sha256(serialized).hexdigest()

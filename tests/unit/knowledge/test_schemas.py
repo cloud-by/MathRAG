@@ -1,8 +1,12 @@
 """旧知识迁移输入契约测试。"""
 
+import hashlib
+import json
+
 import pytest
 from pydantic import ValidationError
 
+from app.modules.knowledge.errors import DuplicateLegacyIdError
 from app.modules.knowledge.schemas import (
     LegacyImportSummary,
     LegacyKnowledgeBundle,
@@ -154,3 +158,63 @@ def test_persistent_payload_contains_only_migration_fields() -> None:
             },
         },
     }
+
+
+@pytest.mark.parametrize("invalid_value", [b"not-json", {"nested-set"}])
+def test_chunk_rejects_non_json_metadata(invalid_value: object) -> None:
+    """元数据值必须可表示为 JSON。"""
+    with pytest.raises(ValidationError, match="metadata"):
+        LegacyKnowledgeChunkInput(**chunk_data(metadata={"invalid": invalid_value}))
+
+
+@pytest.mark.parametrize("invalid_value", [float("nan"), float("inf"), float("-inf")])
+def test_chunk_rejects_non_finite_metadata_numbers(invalid_value: float) -> None:
+    """元数据中的浮点数必须是有限 JSON 数字。"""
+    with pytest.raises(ValidationError, match="metadata"):
+        LegacyKnowledgeChunkInput(**chunk_data(metadata={"invalid": invalid_value}))
+
+
+def test_mutating_persistent_payload_metadata_does_not_change_bundle_digest() -> None:
+    """持久化载荷的嵌套元数据不能与 bundle 共享引用。"""
+    bundle = bundle_data(metadata={"nested": {"values": ["初始"]}})
+    digest = bundle.sha256()
+    payload = bundle.persistent_payload()
+    payload["chunk"]["metadata"]["nested"]["values"].append("篡改")
+
+    assert bundle.sha256() == digest
+
+
+def test_collection_sha256_rejects_duplicate_legacy_ids() -> None:
+    """集合摘要必须拒绝无法稳定排序的重复旧知识 ID。"""
+    with pytest.raises(DuplicateLegacyIdError, match="legacy-algebra-1"):
+        collection_sha256([bundle_data(), bundle_data(retrieval_text="不同分块文本")])
+
+
+def test_sha256_matches_independent_canonical_json_digest() -> None:
+    """摘要遵循 UTF-8、排序键和紧凑分隔符的 JSON 规范。"""
+    bundle = bundle_data(metadata={"中文": {"列表": ["值", 3], "布尔": True}})
+    expected_payload = {
+        "item": item_data(),
+        "chunk": {
+            "chunk_index": 0,
+            "retrieval_text": "一元一次方程：移项并合并同类项。",
+            "answer_context": "先移项，再求解。",
+            "metadata": {
+                "中文": {"列表": ["值", 3], "布尔": True},
+                "legacy_chunk_id": "legacy-algebra-1-0",
+                "legacy_source_id": "legacy-algebra-1",
+                "source_line": 1,
+            },
+        },
+    }
+    expected = hashlib.sha256(
+        json.dumps(
+            expected_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+
+    assert bundle.sha256() == expected
