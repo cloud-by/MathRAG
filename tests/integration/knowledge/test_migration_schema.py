@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import ast
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -32,7 +33,9 @@ def run_alembic(database_url: str, *args: str) -> None:
     )
 
 
-async def fetch_schema(database_url: str) -> tuple[set[str], str | None, set[str], set[str], bool]:
+async def fetch_schema(
+    database_url: str,
+) -> tuple[set[str], str | None, set[str], dict[str, str], bool]:
     """读取知识表、向量类型、约束、索引及 vector 扩展状态。"""
     connection = await asyncpg.connect(
         database_url.replace("postgresql+asyncpg://", "postgresql://")
@@ -74,10 +77,10 @@ async def fetch_schema(database_url: str) -> tuple[set[str], str | None, set[str
             )
         }
         indexes = {
-            row["indexname"]
+            row["indexname"]: row["indexdef"]
             for row in await connection.fetch(
                 """
-                SELECT indexname
+                SELECT indexname, indexdef
                 FROM pg_indexes
                 WHERE schemaname = 'public'
                   AND tablename IN ('knowledge_items', 'knowledge_chunks')
@@ -96,11 +99,12 @@ def test_knowledge_migration_is_self_contained() -> None:
     """历史迁移只能依赖 Alembic、SQLAlchemy 和已安装的数据库类型。"""
     source = MIGRATION_PATH.read_text(encoding="utf-8")
     tree = ast.parse(source)
-    imported_modules = {
-        node.module
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module is not None
-    }
+    imported_modules = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported_modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            imported_modules.add(node.module)
 
     assert all(not module.startswith("app.") for module in imported_modules)
     assert source.count("sa.DateTime(timezone=True)") == 3
@@ -155,6 +159,8 @@ async def verify_database_constraints(database_url: str) -> None:
     )
     item_id = uuid4()
     chunk_id = uuid4()
+    transaction = connection.transaction()
+    await transaction.start()
     try:
         await connection.execute(
             """
@@ -172,40 +178,81 @@ async def verify_database_constraints(database_url: str) -> None:
             chunk_id,
             item_id,
         )
-        with pytest.raises(asyncpg.CheckViolationError):
-            await connection.execute(
-                """
-                INSERT INTO knowledge_items (id, category, title, content, difficulty)
-                VALUES ($1, 'algebra', '非法难度', '测试内容', 'invalid')
-                """,
-                uuid4(),
-            )
-        with pytest.raises(asyncpg.CheckViolationError):
-            await connection.execute(
-                """
-                INSERT INTO knowledge_items (id, category, title, content, difficulty, status)
-                VALUES ($1, 'algebra', '非法状态', '测试内容', 'easy', 'invalid')
-                """,
-                uuid4(),
-            )
-        with pytest.raises(asyncpg.CheckViolationError):
-            await connection.execute(
-                """
-                INSERT INTO knowledge_chunks
-                    (id, knowledge_item_id, chunk_index, retrieval_text, answer_context)
-                VALUES ($1, $2, -1, '非法分块', '回答上下文')
-                """,
-                uuid4(),
-                item_id,
-            )
+        await assert_check_violation(
+            connection,
+            """
+            INSERT INTO knowledge_items (id, category, title, content, difficulty)
+            VALUES ($1, 'algebra', '非法难度', '测试内容', 'invalid')
+            """,
+            uuid4(),
+        )
+        await assert_check_violation(
+            connection,
+            """
+            INSERT INTO knowledge_items (id, category, title, content, difficulty, visibility)
+            VALUES ($1, 'algebra', '非法可见性', '测试内容', 'easy', 'invalid')
+            """,
+            uuid4(),
+        )
+        await assert_check_violation(
+            connection,
+            """
+            INSERT INTO knowledge_items (id, category, title, content, difficulty, status)
+            VALUES ($1, 'algebra', '非法状态', '测试内容', 'easy', 'invalid')
+            """,
+            uuid4(),
+        )
+        await assert_check_violation(
+            connection,
+            """
+            INSERT INTO knowledge_items (id, category, title, content, difficulty, revision)
+            VALUES ($1, 'algebra', '非法版本', '测试内容', 'easy', 0)
+            """,
+            uuid4(),
+        )
+        await assert_check_violation(
+            connection,
+            """
+            INSERT INTO knowledge_chunks
+                (id, knowledge_item_id, chunk_index, retrieval_text, answer_context)
+            VALUES ($1, $2, -1, '非法分块', '回答上下文')
+            """,
+            uuid4(),
+            item_id,
+        )
+        await assert_check_violation(
+            connection,
+            """
+            INSERT INTO knowledge_chunks
+                (id, knowledge_item_id, chunk_index, retrieval_text, answer_context, status)
+            VALUES ($1, $2, 1, '非法状态分块', '回答上下文', 'invalid')
+            """,
+            uuid4(),
+            item_id,
+        )
 
         await connection.execute("DELETE FROM knowledge_items WHERE id = $1", item_id)
         assert await connection.fetchval(
             "SELECT EXISTS (SELECT 1 FROM knowledge_chunks WHERE id = $1)", chunk_id
         ) is False
     finally:
-        await connection.execute("DELETE FROM knowledge_items WHERE id = $1", item_id)
+        await transaction.rollback()
         await connection.close()
+
+
+async def assert_check_violation(
+    connection: asyncpg.Connection,
+    query: str,
+    *arguments: object,
+) -> None:
+    """在 savepoint 中确认约束拒绝写入，并无条件回滚该写入。"""
+    savepoint = connection.transaction()
+    await savepoint.start()
+    try:
+        with pytest.raises(asyncpg.CheckViolationError):
+            await connection.execute(query, *arguments)
+    finally:
+        await savepoint.rollback()
 
 
 def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
@@ -240,7 +287,19 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
             "ix_knowledge_items_category",
             "ix_knowledge_items_status",
             "ix_knowledge_chunks_status",
-        } <= indexes
+        } <= indexes.keys()
+        assert indexes["ix_knowledge_items_category"] == (
+            "CREATE INDEX ix_knowledge_items_category "
+            "ON public.knowledge_items USING btree (category)"
+        )
+        assert indexes["ix_knowledge_items_status"] == (
+            "CREATE INDEX ix_knowledge_items_status "
+            "ON public.knowledge_items USING btree (status)"
+        )
+        assert indexes["ix_knowledge_chunks_status"] == (
+            "CREATE INDEX ix_knowledge_chunks_status "
+            "ON public.knowledge_chunks USING btree (status)"
+        )
         assert vector_extension_exists is True
         assert set(columns) == {
             ("knowledge_items", "id"),
@@ -301,32 +360,69 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
                 column["is_nullable"],
             ) == (data_type, maximum_length, nullable)
         assert columns[("knowledge_chunks", "embedding")]["udt_name"] == "vector"
-        assert "[]" in columns[("knowledge_items", "keywords")]["column_default"]
-        assert "jsonb" in columns[("knowledge_items", "keywords")]["column_default"]
-        assert "[]" in columns[("knowledge_items", "steps")]["column_default"]
-        assert "jsonb" in columns[("knowledge_items", "steps")]["column_default"]
-        assert "{}" in columns[("knowledge_chunks", "metadata")]["column_default"]
-        assert "jsonb" in columns[("knowledge_chunks", "metadata")]["column_default"]
-        for table_name, column_name, expected_default in (
-            ("knowledge_items", "visibility", "public"),
-            ("knowledge_items", "status", "indexing"),
-            ("knowledge_chunks", "status", "pending"),
-            ("knowledge_items", "revision", "1"),
-            ("knowledge_items", "created_at", "now"),
-            ("knowledge_items", "updated_at", "now"),
-            ("knowledge_chunks", "created_at", "now"),
-        ):
-            assert expected_default in columns[(table_name, column_name)]["column_default"].lower()
-        assert "easy" in constraint_definitions["ck_knowledge_items_difficulty"]
-        assert "medium" in constraint_definitions["ck_knowledge_items_difficulty"]
-        assert "hard" in constraint_definitions["ck_knowledge_items_difficulty"]
-        assert "public" in constraint_definitions["ck_knowledge_items_visibility"]
-        assert "private" in constraint_definitions["ck_knowledge_items_visibility"]
-        assert "draft" in constraint_definitions["ck_knowledge_items_status"]
-        assert "archived" in constraint_definitions["ck_knowledge_items_status"]
-        assert ">= 0" in constraint_definitions["ck_knowledge_chunks_chunk_index"]
-        assert "pending" in constraint_definitions["ck_knowledge_chunks_status"]
-        assert "failed" in constraint_definitions["ck_knowledge_chunks_status"]
+        expected_defaults: dict[tuple[str, str], str | None] = {
+            ("knowledge_items", "id"): None,
+            ("knowledge_items", "legacy_id"): None,
+            ("knowledge_items", "category"): None,
+            ("knowledge_items", "title"): None,
+            ("knowledge_items", "keywords"): "[] jsonb",
+            ("knowledge_items", "content"): None,
+            ("knowledge_items", "example"): "'' text",
+            ("knowledge_items", "steps"): "[] jsonb",
+            ("knowledge_items", "difficulty"): None,
+            ("knowledge_items", "visibility"): "public character varying",
+            ("knowledge_items", "status"): "indexing character varying",
+            ("knowledge_items", "revision"): "1",
+            ("knowledge_items", "created_at"): "now",
+            ("knowledge_items", "updated_at"): "now",
+            ("knowledge_chunks", "id"): None,
+            ("knowledge_chunks", "knowledge_item_id"): None,
+            ("knowledge_chunks", "chunk_index"): None,
+            ("knowledge_chunks", "retrieval_text"): None,
+            ("knowledge_chunks", "answer_context"): None,
+            ("knowledge_chunks", "embedding"): None,
+            ("knowledge_chunks", "embedding_model"): None,
+            ("knowledge_chunks", "metadata"): "{} jsonb",
+            ("knowledge_chunks", "status"): "pending character varying",
+            ("knowledge_chunks", "created_at"): "now",
+        }
+        assert set(expected_defaults) == set(columns)
+        for column_key, expected_default in expected_defaults.items():
+            actual_default = columns[column_key]["column_default"]
+            if expected_default is None:
+                assert actual_default is None
+            else:
+                assert actual_default is not None
+                assert all(token in actual_default.lower() for token in expected_default.split())
+        assert allowed_values(constraint_definitions["ck_knowledge_items_difficulty"]) == {
+            "easy",
+            "medium",
+            "hard",
+        }
+        assert allowed_values(constraint_definitions["ck_knowledge_items_visibility"]) == {
+            "public",
+            "private",
+        }
+        assert allowed_values(constraint_definitions["ck_knowledge_items_status"]) == {
+            "draft",
+            "indexing",
+            "ready",
+            "failed",
+            "archived",
+        }
+        assert allowed_values(constraint_definitions["ck_knowledge_chunks_status"]) == {
+            "pending",
+            "ready",
+            "failed",
+        }
+        assert re.search(
+            r"revision\s*>\s*0",
+            constraint_definitions["ck_knowledge_items_revision"],
+        )
+        assert re.search(
+            r"chunk_index\s*>=\s*0",
+            constraint_definitions["ck_knowledge_chunks_chunk_index"],
+        )
         assert constraint_definitions["uq_knowledge_items_legacy_id"] == "UNIQUE (legacy_id)"
         assert (
             constraint_definitions["uq_knowledge_chunks_knowledge_item_id_chunk_index"]
@@ -344,3 +440,8 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
         assert vector_extension_exists is True
     finally:
         run_alembic(database_url, "upgrade", "head")
+
+
+def allowed_values(constraint_definition: str) -> set[str]:
+    """从 PostgreSQL 的枚举式 CHECK 定义中提取全部允许值。"""
+    return set(re.findall(r"'([^']+)'", constraint_definition))
