@@ -181,7 +181,7 @@ def test_processed_step_prefixes_are_normalized_only_in_memory(tmp_path: Path) -
     raw_path = tmp_path / "raw.jsonl"
     chunk_path = tmp_path / "chunks.jsonl"
     _write_jsonl(raw_path, _item(steps=["移项", "求解"]))
-    _write_jsonl(chunk_path, _chunk(steps=["步骤1： 移项", "步骤2:求解"]))
+    _write_jsonl(chunk_path, _chunk(steps=["步骤1：移项", "步骤2:求解"]))
 
     bundles = load_legacy_bundles(raw_path, chunk_path)
 
@@ -214,6 +214,30 @@ def test_step_prefix_normalization_rejects_remaining_difference(tmp_path: Path) 
         load_legacy_bundles(raw_path, chunk_path)
 
     assert "legacy_id=k0001" in str(raised.value)
+
+
+@pytest.mark.parametrize(
+    "processed_steps",
+    [
+        ["步骤99：移项", "步骤2：求解"],
+        ["步骤１：移项", "步骤2：求解"],
+        ["步骤1： 移项", "步骤2：求解"],
+        ["步骤2：移项", "步骤1：求解"],
+    ],
+)
+def test_step_prefix_normalization_rejects_noncanonical_prefixes(
+    tmp_path: Path, processed_steps: list[str]
+) -> None:
+    """编号、数字字符、空白与位置必须完全符合历史前缀契约。"""
+    from app.modules.knowledge.legacy_loader import load_legacy_bundles
+
+    raw_path = tmp_path / "raw.jsonl"
+    chunk_path = tmp_path / "chunks.jsonl"
+    _write_jsonl(raw_path, _item(steps=["移项", "求解"]))
+    _write_jsonl(chunk_path, _chunk(steps=processed_steps))
+
+    with pytest.raises(LegacyKnowledgeInputError, match="legacy_id=k0001"):
+        load_legacy_bundles(raw_path, chunk_path)
 
 
 def test_real_legacy_files_load_26_sorted_bundles() -> None:

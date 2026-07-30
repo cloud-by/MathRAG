@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections import Counter
 from pathlib import Path
 from typing import TypeVar
@@ -18,7 +17,6 @@ from app.modules.knowledge.schemas import (
 
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
-_STEP_PREFIX = re.compile(r"^步骤\d+[：:]\s*")
 
 
 def _validation_detail(error: ValidationError) -> str:
@@ -75,7 +73,11 @@ def _normalize_processed_steps(
     if len(raw_steps) != len(processed_steps):
         raise LegacyKnowledgeInputError(f"legacy_id={legacy_id}: 处理后 steps 数量与原始记录不一致")
 
-    normalized = [_STEP_PREFIX.sub("", step, count=1) for step in processed_steps]
+    normalized: list[str] = []
+    for position, step in enumerate(processed_steps, start=1):
+        prefixes = (f"步骤{position}：", f"步骤{position}:")
+        prefix = next((candidate for candidate in prefixes if step.startswith(candidate)), None)
+        normalized.append(step[len(prefix):] if prefix is not None else step)
     if normalized != raw_steps:
         raise LegacyKnowledgeInputError(f"legacy_id={legacy_id}: 处理后 steps 与原始记录不一致")
     return raw_steps
