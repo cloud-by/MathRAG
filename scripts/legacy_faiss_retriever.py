@@ -124,13 +124,12 @@ class LegacyFaissRetriever:
         output: list[str] = []
         seen: set[str] = set()
         for raw_index in index_row:
-            try:
-                index_value = int(raw_index)
-            except Exception:
+            if isinstance(raw_index, (bool, np.bool_)) or not isinstance(
+                raw_index, (int, np.integer)
+            ):
                 raise ValueError("FAISS 搜索返回了无效索引") from None
-            if index_value == -1:
-                continue
-            if index_value < 0:
+            index_value = int(raw_index)
+            if not 0 <= index_value < self._index.ntotal:
                 raise ValueError("FAISS 搜索返回了越界索引")
             row = self._id_map.get(str(index_value))
             if row is None:

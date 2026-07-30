@@ -321,13 +321,13 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def build_default_retrieve_fn(
+async def build_default_retrieve_fn_async(
     fixture: Mapping[str, Any],
     *,
     provider: EmbeddingProvider | None = None,
     legacy_retriever: LegacyFaissRetriever | None = None,
 ) -> Callable[[str, int], Sequence[Mapping[str, Any]]]:
-    """批量生成查询向量并关闭 Provider，再返回顺序只读 FAISS 调用器。"""
+    """异步批量生成查询向量并关闭 Provider，再返回只读 FAISS 调用器。"""
     questions = fixture.get("questions")
     top_k = fixture.get("top_k")
     if not isinstance(questions, list) or not questions:
@@ -349,21 +349,18 @@ def build_default_retrieve_fn(
     )
     active_provider = provider or OpenAIEmbeddingProvider()
 
-    async def embed_once() -> list[list[float]]:
-        business_error: BaseException | None = None
+    business_error: BaseException | None = None
+    try:
+        vectors = await active_provider.embed_texts(question_texts)
+    except BaseException as exc:
+        business_error = exc
+        raise
+    finally:
         try:
-            return await active_provider.embed_texts(question_texts)
-        except BaseException as exc:
-            business_error = exc
-            raise
-        finally:
-            try:
-                await active_provider.aclose()
-            except BaseException:
-                if business_error is None:
-                    raise
-
-    vectors = asyncio.run(embed_once())
+            await active_provider.aclose()
+        except BaseException:
+            if business_error is None:
+                raise
     if type(vectors) is not list or len(vectors) != len(question_texts):
         raise ValueError("Embedding 返回数量与固定问题集不一致")
 
@@ -387,6 +384,28 @@ def build_default_retrieve_fn(
         return results
 
     return retrieve
+
+
+def build_default_retrieve_fn(
+    fixture: Mapping[str, Any],
+    *,
+    provider: EmbeddingProvider | None = None,
+    legacy_retriever: LegacyFaissRetriever | None = None,
+) -> Callable[[str, int], Sequence[Mapping[str, Any]]]:
+    """仅在无运行中事件循环时桥接异步默认检索构造器。"""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        raise RuntimeError("同步检索构造器不能在运行中的事件循环内调用")
+    return asyncio.run(
+        build_default_retrieve_fn_async(
+            fixture,
+            provider=provider,
+            legacy_retriever=legacy_retriever,
+        )
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:

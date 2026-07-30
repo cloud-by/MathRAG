@@ -43,9 +43,16 @@ from scripts.capture_retrieval_baseline import (
 from scripts.legacy_faiss_retriever import LegacyFaissRetriever
 
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 FIXED_QUESTION_COUNT = 26
 FIXED_TOP_K = 3
+METHODOLOGY = {
+    "top_k": FIXED_TOP_K,
+    "warmup_queries": 1,
+    "warmup_strategy": "first_query_vector",
+    "timed_queries": FIXED_QUESTION_COUNT,
+    "latency_scope": "repository_sql_only",
+}
 SHA256_PATTERN = re.compile(r"[0-9a-fA-F]{64}")
 GIT_SHA_PATTERN = re.compile(r"(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})")
 QUESTION_ID_PATTERN = re.compile(r"rq-\d{4}")
@@ -79,6 +86,10 @@ class EvaluationInputError(ValueError):
 
 class EvaluationThresholdError(RuntimeError):
     """真实检索指标未达到 M3 切换门槛。"""
+
+
+class OutputExistsError(EvaluationInputError):
+    """成功 artifact 已存在，且调用方未明确允许替换。"""
 
 
 @dataclass(frozen=True)
@@ -118,8 +129,9 @@ def _validated_source_ids(value: object, field_name: str) -> list[str]:
     for item in value:
         if type(item) is not str or not item or item != item.strip():
             raise EvaluationInputError(f"{field_name} 包含无效 source ID")
-        if item not in output:
-            output.append(item)
+        if item in output:
+            raise EvaluationInputError(f"{field_name} 包含重复 source ID")
+        output.append(item)
     return output
 
 
@@ -141,10 +153,10 @@ def _validated_metric_row(row: Mapping[str, object]) -> tuple[
         raise EvaluationInputError("每题 top_k 必须是 1 到 10 的整数")
     if len(legacy) > top_k or len(pgvector) > top_k:
         raise EvaluationInputError("检索 source ID 数量不能超过 top_k")
-    try:
-        latency_ms = float(row.get("pgvector_latency_ms"))
-    except Exception:
-        raise EvaluationInputError("pgvector_latency_ms 必须是有限非负数") from None
+    raw_latency_ms = row.get("pgvector_latency_ms")
+    if type(raw_latency_ms) not in {int, float}:
+        raise EvaluationInputError("pgvector_latency_ms 必须是有限非负数")
+    latency_ms = float(raw_latency_ms)
     if not math.isfinite(latency_ms) or latency_ms < 0.0:
         raise EvaluationInputError("pgvector_latency_ms 必须是有限非负数")
     return expected, legacy, pgvector, latency_ms, top_k
@@ -183,23 +195,41 @@ def assert_thresholds(metrics: RetrievalMetrics) -> None:
     """要求真实 26 题对账满足冻结的 M3 门槛；等于门槛时通过。"""
     if not isinstance(metrics, RetrievalMetrics):
         raise EvaluationThresholdError("检索指标类型无效")
+    if (
+        type(metrics.total_questions) is not int
+        or type(metrics.expected_hit_count) is not int
+    ):
+        raise EvaluationThresholdError("检索计数指标必须是整数")
+    if metrics.total_questions != FIXED_QUESTION_COUNT:
+        raise EvaluationThresholdError("固定题集必须包含 26 题")
+    if not 0 <= metrics.expected_hit_count <= metrics.total_questions:
+        raise EvaluationThresholdError("期望命中计数超出有效范围")
     numeric_metrics = (
         metrics.expected_hit_rate,
         metrics.average_top_k_overlap,
         metrics.pgvector_p50_ms,
         metrics.pgvector_p95_ms,
     )
-    if not all(math.isfinite(value) for value in numeric_metrics):
+    if not all(type(value) in {int, float} for value in numeric_metrics) or not all(
+        math.isfinite(value) for value in numeric_metrics
+    ):
         raise EvaluationThresholdError("检索指标必须是有限数值")
     if not (
         0.0 <= metrics.expected_hit_rate <= 1.0
         and 0.0 <= metrics.average_top_k_overlap <= 1.0
         and metrics.pgvector_p50_ms >= 0.0
         and metrics.pgvector_p95_ms >= 0.0
+        and metrics.pgvector_p95_ms >= metrics.pgvector_p50_ms
     ):
         raise EvaluationThresholdError("检索指标超出有效范围")
-    if metrics.total_questions != FIXED_QUESTION_COUNT:
-        raise EvaluationThresholdError("固定题集必须包含 26 题")
+    expected_rate = metrics.expected_hit_count / metrics.total_questions
+    if not math.isclose(
+        metrics.expected_hit_rate,
+        expected_rate,
+        rel_tol=1e-12,
+        abs_tol=1e-12,
+    ):
+        raise EvaluationThresholdError("期望命中计数与命中率不一致")
     if metrics.expected_hit_rate < 0.90:
         raise EvaluationThresholdError("pgvector Top-3 期望命中率低于 90%")
     if metrics.average_top_k_overlap < 0.80:
@@ -268,13 +298,15 @@ def _safe_question(question: Mapping[str, object]) -> dict[str, object]:
     if type(question_id) is not str or not QUESTION_ID_PATTERN.fullmatch(question_id):
         raise EvaluationInputError("artifact question_id 格式无效")
     expected, legacy, pgvector, latency_ms, top_k = _validated_metric_row(question)
+    if top_k != FIXED_TOP_K:
+        raise EvaluationInputError("artifact 每题 top_k 必须为 3")
     expected_hit = question.get("expected_hit")
     if type(expected_hit) is not bool or expected_hit != bool(set(expected) & set(pgvector)):
         raise EvaluationInputError("artifact expected_hit 与 source ID 不一致")
-    try:
-        top_k_overlap = float(question.get("top_k_overlap"))
-    except Exception:
-        raise EvaluationInputError("artifact top_k_overlap 无效") from None
+    raw_top_k_overlap = question.get("top_k_overlap")
+    if type(raw_top_k_overlap) not in {int, float}:
+        raise EvaluationInputError("artifact top_k_overlap 无效")
+    top_k_overlap = float(raw_top_k_overlap)
     calculated_overlap = len(set(legacy) & set(pgvector)) / top_k
     if (
         not math.isfinite(top_k_overlap)
@@ -294,11 +326,44 @@ def _safe_question(question: Mapping[str, object]) -> dict[str, object]:
     }
 
 
+def _assert_metrics_match_details(
+    metrics: RetrievalMetrics,
+    calculated: RetrievalMetrics,
+) -> None:
+    """要求聚合指标完全由当前明细重算得到。"""
+    if not isinstance(metrics, RetrievalMetrics):
+        raise EvaluationInputError("metrics 类型无效")
+    for field_name in ("total_questions", "expected_hit_count"):
+        value = getattr(metrics, field_name)
+        if type(value) is not int or value != getattr(calculated, field_name):
+            raise EvaluationInputError("聚合指标与问题明细不一致")
+    for field_name in (
+        "expected_hit_rate",
+        "average_top_k_overlap",
+        "pgvector_p50_ms",
+        "pgvector_p95_ms",
+    ):
+        value = getattr(metrics, field_name)
+        expected = getattr(calculated, field_name)
+        if (
+            type(value) not in {int, float}
+            or not math.isfinite(value)
+            or not math.isclose(
+                float(value),
+                expected,
+                rel_tol=1e-12,
+                abs_tol=1e-12,
+            )
+        ):
+            raise EvaluationInputError("聚合指标与问题明细不一致")
+
+
 def build_artifact(
     *,
     metrics: RetrievalMetrics,
     questions: Sequence[Mapping[str, object]],
     git_sha: str,
+    git_tree_sha: str,
     fixture_sha256: str,
     seed_sha256: str,
     faiss_sha256: str,
@@ -308,7 +373,7 @@ def build_artifact(
     provider_origin_sha256: str,
     generated_at: datetime | None = None,
 ) -> dict[str, object]:
-    """构造 schema 1.0 的脱敏对账 artifact。"""
+    """构造 schema 1.1 的脱敏对账 artifact。"""
     if not isinstance(metrics, RetrievalMetrics):
         raise EvaluationInputError("metrics 类型无效")
     if type(embedding_model) is not str or not embedding_model.strip():
@@ -317,10 +382,17 @@ def build_artifact(
         raise EvaluationInputError("Embedding 维度必须为 1024")
 
     safe_questions = [_safe_question(question) for question in questions]
+    if len(safe_questions) != FIXED_QUESTION_COUNT:
+        raise EvaluationInputError("artifact 必须包含 26 题明细")
+    question_ids = [question["question_id"] for question in safe_questions]
+    if len(set(question_ids)) != FIXED_QUESTION_COUNT:
+        raise EvaluationInputError("artifact question_id 必须非空且唯一")
+    _assert_metrics_match_details(metrics, calculate_metrics(safe_questions))
     document: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": _format_utc(generated_at or datetime.now(timezone.utc)),
         "git_sha": _validated_git_sha(git_sha),
+        "git_tree_sha": _validated_git_sha(git_tree_sha),
         "inputs": {
             "fixture_sha256": _validated_sha256(fixture_sha256),
             "seed_sha256": _validated_sha256(seed_sha256),
@@ -334,6 +406,7 @@ def build_artifact(
                 provider_origin_sha256
             ),
         },
+        "methodology": dict(METHODOLOGY),
         "metrics": asdict(metrics),
         "questions": safe_questions,
     }
@@ -386,6 +459,7 @@ def write_success_artifact(
     metrics: RetrievalMetrics,
     questions: Sequence[Mapping[str, object]],
     git_sha: str,
+    git_tree_sha: str,
     fixture_sha256: str,
     seed_sha256: str,
     faiss_sha256: str,
@@ -401,6 +475,7 @@ def write_success_artifact(
         metrics=metrics,
         questions=questions,
         git_sha=git_sha,
+        git_tree_sha=git_tree_sha,
         fixture_sha256=fixture_sha256,
         seed_sha256=seed_sha256,
         faiss_sha256=faiss_sha256,
@@ -578,26 +653,53 @@ def _load_evaluation_fixture(path: Path) -> tuple[dict[str, Any], str]:
     return fixture, seed_sha256
 
 
-def _git_sha() -> str:
-    """读取当前工作树 HEAD 的完整提交摘要。"""
+def _run_git(command: list[str]) -> subprocess.CompletedProcess[str]:
+    """在项目根目录执行只读 Git 证据命令。"""
     try:
-        completed = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+        return subprocess.run(
+            command,
             cwd=settings.PROJECT_ROOT,
-            check=True,
             capture_output=True,
             text=True,
             encoding="utf-8",
         )
-    except (OSError, subprocess.SubprocessError):
-        raise EvaluationInputError("无法读取 Git 提交摘要") from None
-    return _validated_git_sha(completed.stdout.strip())
+    except OSError:
+        raise EvaluationInputError("无法读取 Git 证据") from None
 
 
-async def _run_cli(fixture_path: Path, output_path: Path) -> RetrievalMetrics:
+def _git_evidence() -> tuple[str, str]:
+    """要求 tracked/index 干净，并冻结 HEAD 与对应 tree 摘要。"""
+    for command in (
+        ["git", "diff", "--quiet"],
+        ["git", "diff", "--cached", "--quiet"],
+    ):
+        completed = _run_git(command)
+        if completed.returncode == 1:
+            raise EvaluationInputError("Git tracked/index 必须干净")
+        if completed.returncode != 0:
+            raise EvaluationInputError("无法验证 Git tracked/index 状态")
+
+    evidence: list[str] = []
+    for reference in ("HEAD", "HEAD^{tree}"):
+        completed = _run_git(["git", "rev-parse", reference])
+        if completed.returncode != 0:
+            raise EvaluationInputError("无法读取 Git 证据")
+        evidence.append(_validated_git_sha(completed.stdout.strip()))
+    return evidence[0], evidence[1]
+
+
+async def _run_cli(
+    fixture_path: Path,
+    output_path: Path,
+    *,
+    git_evidence: tuple[str, str] | None = None,
+) -> RetrievalMetrics:
     """执行真实对账，并统一拥有全局 Provider 与数据库连接池。"""
     business_error: BaseException | None = None
+    resources_started = False
     try:
+        git_sha, git_tree_sha = git_evidence or _git_evidence()
+        resources_started = True
         provider = get_embedding_provider()
         fixture, seed_sha256 = _load_evaluation_fixture(fixture_path)
         provider_origin_sha256 = hash_provider_origin(settings.EMBEDDING_BASE_URL)
@@ -617,7 +719,8 @@ async def _run_cli(fixture_path: Path, output_path: Path) -> RetrievalMetrics:
             output_path,
             metrics=metrics,
             questions=rows,
-            git_sha=_git_sha(),
+            git_sha=git_sha,
+            git_tree_sha=git_tree_sha,
             fixture_sha256=sha256_file(fixture_path),
             seed_sha256=seed_sha256,
             faiss_sha256=sha256_file(settings.FAISS_INDEX_PATH),
@@ -631,18 +734,19 @@ async def _run_cli(fixture_path: Path, output_path: Path) -> RetrievalMetrics:
         business_error = exc
         raise
     finally:
-        cleanup_error: BaseException | None = None
-        try:
-            await dispose_embedding_provider()
-        except BaseException as exc:
-            cleanup_error = exc
-        try:
-            await dispose_engine()
-        except BaseException as exc:
-            if cleanup_error is None:
+        if resources_started:
+            cleanup_error: BaseException | None = None
+            try:
+                await dispose_embedding_provider()
+            except BaseException as exc:
                 cleanup_error = exc
-        if business_error is None and cleanup_error is not None:
-            raise cleanup_error
+            try:
+                await dispose_engine()
+            except BaseException as exc:
+                if cleanup_error is None:
+                    cleanup_error = exc
+            if business_error is None and cleanup_error is not None:
+                raise cleanup_error
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -650,6 +754,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="对账 FAISS 与 pgvector Top-3 检索")
     parser.add_argument("--fixture", required=True, type=Path, help="固定问题集 JSON")
     parser.add_argument("--output", required=True, type=Path, help="成功 artifact JSON")
+    parser.add_argument(
+        "--replace-existing",
+        action="store_true",
+        help="执行前移除已存在的目标 artifact",
+    )
     return parser
 
 
@@ -668,8 +777,28 @@ def _write_error(error: str, exception: BaseException) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     """运行真实对账，阈值失败固定退出 4 且不写成功 artifact。"""
     args = build_parser().parse_args(argv)
+    git_evidence: tuple[str, str] | None = None
+    if args.output.exists():
+        if not args.replace_existing:
+            _write_error("output_exists", OutputExistsError("成功 artifact 已存在"))
+            return 2
+        try:
+            git_evidence = _git_evidence()
+        except EvaluationInputError as exc:
+            _write_error("invalid_input", exc)
+            return 2
+        try:
+            args.output.unlink()
+        except OSError as exc:
+            _write_error("invalid_input", exc)
+            return 2
     try:
-        metrics = asyncio.run(_run_cli(args.fixture, args.output))
+        if git_evidence is None:
+            metrics = asyncio.run(_run_cli(args.fixture, args.output))
+        else:
+            metrics = asyncio.run(
+                _run_cli(args.fixture, args.output, git_evidence=git_evidence)
+            )
     except EvaluationThresholdError as exc:
         _write_error("threshold_failed", exc)
         return 4

@@ -53,8 +53,8 @@ def _passing_metrics(**overrides: object) -> RetrievalMetrics:
     values: dict[str, object] = {
         "total_questions": 26,
         "expected_hit_count": 24,
-        "expected_hit_rate": 0.90,
-        "average_top_k_overlap": 0.80,
+        "expected_hit_rate": 24 / 26,
+        "average_top_k_overlap": 24 / 26,
         "pgvector_p50_ms": 10.0,
         "pgvector_p95_ms": 100.0,
     }
@@ -75,12 +75,42 @@ def _artifact_question() -> dict[str, object]:
     }
 
 
+def _artifact_questions() -> list[dict[str, object]]:
+    questions: list[dict[str, object]] = []
+    for index in range(1, 27):
+        expected_id = f"k{index:04d}"
+        legacy_ids = [expected_id, f"k{index + 100:04d}", f"k{index + 200:04d}"]
+        expected_hit = index <= 24
+        pgvector_ids = (
+            list(legacy_ids)
+            if expected_hit
+            else [
+                f"k{index + 300:04d}",
+                f"k{index + 400:04d}",
+                f"k{index + 500:04d}",
+            ]
+        )
+        questions.append(
+            {
+                "question_id": f"rq-{index:04d}",
+                "expected_legacy_ids": [expected_id],
+                "legacy_source_ids": legacy_ids,
+                "pgvector_source_ids": pgvector_ids,
+                "pgvector_latency_ms": 10.0 if index <= 24 else 100.0,
+                "expected_hit": expected_hit,
+                "top_k_overlap": 1.0 if expected_hit else 0.0,
+                "top_k": 3,
+            }
+        )
+    return questions
+
+
 def test_calculate_metrics_uses_expected_set_and_each_rows_top_k() -> None:
     rows = [
         _question_row(
             expected=["k0001"],
-            legacy=["k0001", "k0002", "k0003", "k0003"],
-            pgvector=["k0001", "k0002", "k0004", "k0004"],
+            legacy=["k0001", "k0002", "k0003"],
+            pgvector=["k0001", "k0002", "k0004"],
             latency_ms=4.0,
             top_k=3,
         ),
@@ -141,7 +171,7 @@ def test_threshold_boundary_values_pass() -> None:
     ("overrides", "message"),
     [
         ({"total_questions": 25}, "26"),
-        ({"expected_hit_rate": 0.899999}, "90%"),
+        ({"expected_hit_count": 23, "expected_hit_rate": 23 / 26}, "90%"),
         ({"average_top_k_overlap": 0.799999}, "80%"),
         ({"pgvector_p95_ms": 100.000001}, "100 ms"),
     ],
@@ -180,6 +210,23 @@ def test_thresholds_reject_out_of_range_metrics(
         assert_thresholds(_passing_metrics(**overrides))
 
 
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"expected_hit_rate": 0.90},
+        {"expected_hit_count": True},
+        {"expected_hit_count": -1, "expected_hit_rate": -1 / 26},
+        {"expected_hit_count": 27, "expected_hit_rate": 27 / 26},
+        {"pgvector_p50_ms": 50.0, "pgvector_p95_ms": 10.0},
+    ],
+)
+def test_thresholds_reject_internally_inconsistent_metrics(
+    overrides: dict[str, object],
+) -> None:
+    with pytest.raises(EvaluationThresholdError):
+        assert_thresholds(_passing_metrics(**overrides))
+
+
 def test_provider_origin_is_canonicalized_then_only_hashed() -> None:
     expected = hashlib.sha256(b"https://example.test").hexdigest()
 
@@ -206,11 +253,13 @@ def test_provider_origin_rejects_invalid_urls_without_echoing_them(url: str) -> 
 
 def test_artifact_contains_only_auditable_safe_fields() -> None:
     generated_at = datetime(2026, 7, 30, 1, 2, 3, tzinfo=timezone.utc)
+    questions = _artifact_questions()
 
     artifact = build_artifact(
         metrics=_passing_metrics(),
-        questions=[_artifact_question()],
+        questions=questions,
         git_sha="a" * 40,
+        git_tree_sha="1" * 40,
         fixture_sha256="b" * 64,
         seed_sha256="c" * 64,
         faiss_sha256="d" * 64,
@@ -222,9 +271,10 @@ def test_artifact_contains_only_auditable_safe_fields() -> None:
     )
 
     assert artifact == {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "generated_at": "2026-07-30T01:02:03Z",
         "git_sha": "a" * 40,
+        "git_tree_sha": "1" * 40,
         "inputs": {
             "fixture_sha256": "b" * 64,
             "seed_sha256": "c" * 64,
@@ -236,15 +286,22 @@ def test_artifact_contains_only_auditable_safe_fields() -> None:
             "dimensions": 1024,
             "provider_origin_sha256": "f" * 64,
         },
+        "methodology": {
+            "top_k": 3,
+            "warmup_queries": 1,
+            "warmup_strategy": "first_query_vector",
+            "timed_queries": 26,
+            "latency_scope": "repository_sql_only",
+        },
         "metrics": {
             "total_questions": 26,
             "expected_hit_count": 24,
-            "expected_hit_rate": 0.90,
-            "average_top_k_overlap": 0.80,
+            "expected_hit_rate": 24 / 26,
+            "average_top_k_overlap": 24 / 26,
             "pgvector_p50_ms": 10.0,
             "pgvector_p95_ms": 100.0,
         },
-        "questions": [_artifact_question()],
+        "questions": questions,
     }
     serialized = json.dumps(artifact, ensure_ascii=False).lower()
     for forbidden in (
@@ -257,6 +314,108 @@ def test_artifact_contains_only_auditable_safe_fields() -> None:
         "://",
     ):
         assert forbidden not in serialized
+
+
+def test_artifact_records_commit_and_tree_evidence() -> None:
+    artifact = build_artifact(
+        metrics=_passing_metrics(),
+        questions=_artifact_questions(),
+        git_sha="a" * 40,
+        git_tree_sha="b" * 40,
+        fixture_sha256="c" * 64,
+        seed_sha256="d" * 64,
+        faiss_sha256="e" * 64,
+        id_map_sha256="f" * 64,
+        embedding_model="embedding-test",
+        dimensions=1024,
+        provider_origin_sha256="1" * 64,
+        generated_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+
+    assert artifact["git_sha"] == "a" * 40
+    assert artifact["git_tree_sha"] == "b" * 40
+
+
+def _build_test_artifact(
+    questions: list[dict[str, object]],
+    metrics: RetrievalMetrics,
+) -> dict[str, object]:
+    return build_artifact(
+        metrics=metrics,
+        questions=questions,
+        git_sha="a" * 40,
+        git_tree_sha="b" * 40,
+        fixture_sha256="c" * 64,
+        seed_sha256="d" * 64,
+        faiss_sha256="e" * 64,
+        id_map_sha256="f" * 64,
+        embedding_model="embedding-test",
+        dimensions=1024,
+        provider_origin_sha256="1" * 64,
+        generated_at=datetime(2026, 7, 30, tzinfo=timezone.utc),
+    )
+
+
+@pytest.mark.parametrize("case", ["too_few", "too_many", "duplicate_id"])
+def test_artifact_requires_exactly_26_unique_question_ids(case: str) -> None:
+    questions = _artifact_questions()
+    if case == "too_few":
+        questions.pop()
+    elif case == "too_many":
+        extra = dict(questions[-1])
+        extra["question_id"] = "rq-0027"
+        questions.append(extra)
+    else:
+        questions[-1]["question_id"] = questions[0]["question_id"]
+
+    with pytest.raises(EvaluationInputError):
+        _build_test_artifact(questions, calculate_metrics(questions))
+
+
+@pytest.mark.parametrize(
+    ("field_name", "forged_value"),
+    [
+        ("total_questions", 25),
+        ("expected_hit_count", 23),
+        ("expected_hit_rate", 0.91),
+        ("average_top_k_overlap", 0.91),
+        ("pgvector_p50_ms", 11.0),
+        ("pgvector_p95_ms", 99.0),
+    ],
+)
+def test_artifact_rejects_metrics_not_recalculated_from_details(
+    field_name: str,
+    forged_value: object,
+) -> None:
+    questions = _artifact_questions()
+    values = vars(calculate_metrics(questions)) | {field_name: forged_value}
+
+    with pytest.raises(EvaluationInputError, match="指标"):
+        _build_test_artifact(questions, RetrievalMetrics(**values))
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["string_latency", "string_overlap", "duplicate_source_id", "non_top_three"],
+)
+def test_artifact_rejects_non_strict_question_result_fields(case: str) -> None:
+    questions = _artifact_questions()
+    first = questions[0]
+    if case == "string_latency":
+        first["pgvector_latency_ms"] = "10.0"
+    elif case == "string_overlap":
+        first["top_k_overlap"] = "1.0"
+    elif case == "duplicate_source_id":
+        first["legacy_source_ids"] = ["k0001", "k0001", "k0101"]
+        first["top_k_overlap"] = 2 / 3
+    else:
+        first["top_k"] = 2
+        first["legacy_source_ids"] = first["legacy_source_ids"][:2]
+        first["pgvector_source_ids"] = first["pgvector_source_ids"][:2]
+        first["top_k_overlap"] = 1.0
+
+    with pytest.raises(EvaluationInputError):
+        _build_test_artifact(questions, calculate_metrics(questions))
 
 
 @pytest.mark.parametrize(
@@ -272,8 +431,9 @@ def test_artifact_contains_only_auditable_safe_fields() -> None:
 def test_artifact_rejects_every_invalid_sha256(field_name: str) -> None:
     kwargs: dict[str, object] = {
         "metrics": _passing_metrics(),
-        "questions": [],
+        "questions": _artifact_questions(),
         "git_sha": "a" * 40,
+        "git_tree_sha": "1" * 40,
         "fixture_sha256": "b" * 64,
         "seed_sha256": "c" * 64,
         "faiss_sha256": "d" * 64,
@@ -301,14 +461,15 @@ def test_artifact_rejects_every_invalid_sha256(field_name: str) -> None:
 def test_artifact_rejects_unknown_or_secret_question_payloads(
     unsafe_update: dict[str, object],
 ) -> None:
-    question = _artifact_question()
-    question.update(unsafe_update)
+    questions = _artifact_questions()
+    questions[0].update(unsafe_update)
 
     with pytest.raises(EvaluationInputError):
         build_artifact(
-            metrics=_passing_metrics(),
-            questions=[question],
+            metrics=calculate_metrics(questions),
+            questions=questions,
             git_sha="a" * 40,
+            git_tree_sha="1" * 40,
             fixture_sha256="b" * 64,
             seed_sha256="c" * 64,
             faiss_sha256="d" * 64,
@@ -321,17 +482,17 @@ def test_artifact_rejects_unknown_or_secret_question_payloads(
 
 
 class _FakeIndex:
-    def __init__(self, *, ntotal: int, indices: list[int]) -> None:
+    def __init__(self, *, ntotal: int, indices: list[object]) -> None:
         self.ntotal = ntotal
         self.d = 1024
         self._indices = indices
         self.calls: list[tuple[np.ndarray, int]] = []
 
-    def search(self, query: np.ndarray, top_k: int) -> tuple[np.ndarray, np.ndarray]:
+    def search(self, query: np.ndarray, top_k: int) -> tuple[np.ndarray, object]:
         self.calls.append((query, top_k))
         return (
             np.zeros((1, len(self._indices)), dtype="float32"),
-            np.asarray([self._indices], dtype="int64"),
+            SimpleNamespace(tolist=lambda: [list(self._indices)]),
         )
 
 
@@ -352,10 +513,10 @@ def _build_legacy_adapter(
     return LegacyFaissRetriever(index_path=index_path, id_map_path=id_map_path)
 
 
-def test_legacy_adapter_searches_valid_vector_and_ignores_negative_index(
+def test_legacy_adapter_searches_valid_vector_and_accepts_numpy_integer_index(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    index = _FakeIndex(ntotal=3, indices=[0, -1, 2])
+    index = _FakeIndex(ntotal=3, indices=[0, np.int64(1), 2])
     retriever = _build_legacy_adapter(
         tmp_path,
         monkeypatch,
@@ -373,7 +534,7 @@ def test_legacy_adapter_searches_valid_vector_and_ignores_negative_index(
 
     source_ids = retriever.search_vector(vector, top_k=10)
 
-    assert source_ids == ["k0001", "k0003"]
+    assert source_ids == ["k0001", "k0002", "k0003"]
     assert len(index.calls) == 1
     query, requested_k = index.calls[0]
     assert query.shape == (1, 1024)
@@ -381,6 +542,32 @@ def test_legacy_adapter_searches_valid_vector_and_ignores_negative_index(
     assert requested_k == 3
     assert not hasattr(retriever, "add")
     assert not hasattr(retriever, "write")
+
+
+@pytest.mark.parametrize("raw_index", [1.0, "1", True, -1, 2])
+def test_legacy_adapter_rejects_invalid_raw_index_before_id_map_lookup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    raw_index: object,
+) -> None:
+    index = _FakeIndex(ntotal=2, indices=[raw_index])
+    retriever = _build_legacy_adapter(
+        tmp_path,
+        monkeypatch,
+        index=index,
+        id_map_text=json.dumps(
+            {"0": {"source_id": "k0001"}, "1": {"source_id": "k0002"}}
+        ),
+    )
+
+    class NoLookup(dict[str, dict[str, str]]):
+        def get(self, key: str, default: object = None) -> dict[str, str] | None:
+            raise AssertionError("无效索引不得查询 id_map")
+
+    retriever._id_map = NoLookup(retriever._id_map)
+
+    with pytest.raises(ValueError, match="FAISS"):
+        retriever.search_vector([1.0] + [0.0] * 1023, top_k=1)
 
 
 @pytest.mark.parametrize(
@@ -545,6 +732,12 @@ def _install_global_provider(
         lambda: provider,
         raising=False,
     )
+    monkeypatch.setattr(
+        evaluator_module,
+        "_git_evidence",
+        lambda: ("a" * 40, "b" * 40),
+        raising=False,
+    )
 
 
 def test_evaluator_batches_provider_and_times_only_repository_sql() -> None:
@@ -666,6 +859,223 @@ def test_evaluator_batches_provider_and_times_only_repository_sql() -> None:
     assert len(
         [event for event in events if isinstance(event, tuple) and event[0] == "timer"]
     ) == 52
+
+
+def test_git_evidence_checks_tracked_and_index_before_reading_commit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[list[str]] = []
+
+    def run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        calls.append(command)
+        outputs = {
+            ("git", "rev-parse", "HEAD"): "a" * 40,
+            ("git", "rev-parse", "HEAD^{tree}"): "b" * 40,
+        }
+        return SimpleNamespace(returncode=0, stdout=outputs.get(tuple(command), ""))
+
+    monkeypatch.setattr(evaluator_module.subprocess, "run", run)
+
+    assert evaluator_module._git_evidence() == ("a" * 40, "b" * 40)
+    assert calls == [
+        ["git", "diff", "--quiet"],
+        ["git", "diff", "--cached", "--quiet"],
+        ["git", "rev-parse", "HEAD"],
+        ["git", "rev-parse", "HEAD^{tree}"],
+    ]
+
+
+@pytest.mark.parametrize(
+    "dirty_command",
+    [
+        ["git", "diff", "--quiet"],
+        ["git", "diff", "--cached", "--quiet"],
+    ],
+)
+def test_git_evidence_rejects_dirty_tracked_or_index_state(
+    monkeypatch: pytest.MonkeyPatch,
+    dirty_command: list[str],
+) -> None:
+    calls: list[list[str]] = []
+
+    def run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        calls.append(command)
+        return SimpleNamespace(returncode=1 if command == dirty_command else 0, stdout="")
+
+    monkeypatch.setattr(evaluator_module.subprocess, "run", run)
+
+    with pytest.raises(EvaluationInputError, match="Git"):
+        evaluator_module._git_evidence()
+
+    assert ["git", "rev-parse", "HEAD"] not in calls
+
+
+def test_cli_rejects_dirty_evidence_before_external_resources(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    def reject_dirty() -> tuple[str, str]:
+        events.append("git-evidence")
+        raise EvaluationInputError("Git tracked/index 必须干净")
+
+    def open_provider() -> object:
+        events.append("provider")
+        raise AssertionError("不应创建 Provider")
+
+    monkeypatch.setattr(evaluator_module, "_git_evidence", reject_dirty, raising=False)
+    monkeypatch.setattr(evaluator_module, "get_embedding_provider", open_provider)
+
+    with pytest.raises(EvaluationInputError, match="Git"):
+        asyncio.run(
+            evaluator_module._run_cli(
+                Path("fixture.json"), tmp_path / "parity.json"
+            )
+        )
+
+    assert events == ["git-evidence"]
+
+
+def test_cli_existing_output_is_preserved_without_external_calls(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    output_path = tmp_path / "parity.json"
+    output_path.write_text('{"old": true}\n', encoding="utf-8")
+    calls: list[str] = []
+
+    async def run_cli(fixture_path: Path, requested_output: Path) -> RetrievalMetrics:
+        calls.append("run")
+        return _passing_metrics()
+
+    monkeypatch.setattr(evaluator_module, "_run_cli", run_cli)
+
+    exit_code = evaluator_module.main(
+        ["--fixture", "fixture.json", "--output", str(output_path)]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert calls == []
+    assert json.loads(output_path.read_text(encoding="utf-8")) == {"old": True}
+    assert "output_exists" in captured.err
+    assert captured.out == ""
+
+
+def test_cli_replace_failure_removes_old_target_and_writes_nothing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_path = tmp_path / "parity.json"
+    output_path.write_text('{"old": true}\n', encoding="utf-8")
+
+    async def fail(
+        fixture_path: Path,
+        requested_output: Path,
+        *,
+        git_evidence: tuple[str, str] | None = None,
+    ) -> RetrievalMetrics:
+        assert not requested_output.exists()
+        assert git_evidence == ("a" * 40, "b" * 40)
+        raise EvaluationThresholdError("threshold")
+
+    monkeypatch.setattr(
+        evaluator_module, "_git_evidence", lambda: ("a" * 40, "b" * 40)
+    )
+    monkeypatch.setattr(evaluator_module, "_run_cli", fail)
+
+    exit_code = evaluator_module.main(
+        [
+            "--fixture",
+            "fixture.json",
+            "--output",
+            str(output_path),
+            "--replace-existing",
+        ]
+    )
+
+    assert exit_code == 4
+    assert not output_path.exists()
+
+
+def test_cli_replace_success_atomically_writes_new_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_path = tmp_path / "parity.json"
+    output_path.write_text('{"old": true}\n', encoding="utf-8")
+
+    async def succeed(
+        fixture_path: Path,
+        requested_output: Path,
+        *,
+        git_evidence: tuple[str, str] | None = None,
+    ) -> RetrievalMetrics:
+        assert not requested_output.exists()
+        assert git_evidence == ("a" * 40, "b" * 40)
+        evaluator_module._atomic_write_json(requested_output, {"new": True})
+        return _passing_metrics()
+
+    monkeypatch.setattr(
+        evaluator_module, "_git_evidence", lambda: ("a" * 40, "b" * 40)
+    )
+    monkeypatch.setattr(evaluator_module, "_run_cli", succeed)
+
+    exit_code = evaluator_module.main(
+        [
+            "--fixture",
+            "fixture.json",
+            "--output",
+            str(output_path),
+            "--replace-existing",
+        ]
+    )
+
+    assert exit_code == 0
+    assert json.loads(output_path.read_text(encoding="utf-8")) == {"new": True}
+
+
+def test_cli_replace_freezes_clean_evidence_before_removing_target(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_path = tmp_path / "parity.json"
+    output_path.write_text('{"old": true}\n', encoding="utf-8")
+    events: list[str] = []
+
+    def git_evidence() -> tuple[str, str]:
+        assert output_path.exists()
+        events.append("evidence")
+        return "a" * 40, "b" * 40
+
+    async def succeed(
+        fixture_path: Path,
+        requested_output: Path,
+        *,
+        git_evidence: tuple[str, str] | None = None,
+    ) -> RetrievalMetrics:
+        assert not requested_output.exists()
+        assert git_evidence == ("a" * 40, "b" * 40)
+        events.append("evaluation")
+        return _passing_metrics()
+
+    monkeypatch.setattr(evaluator_module, "_git_evidence", git_evidence)
+    monkeypatch.setattr(evaluator_module, "_run_cli", succeed)
+
+    exit_code = evaluator_module.main(
+        [
+            "--fixture",
+            "fixture.json",
+            "--output",
+            str(output_path),
+            "--replace-existing",
+        ]
+    )
+
+    assert exit_code == 0
+    assert events == ["evidence", "evaluation"]
 
 
 @pytest.mark.parametrize("failure_stage", ["fixture", "session", "evaluation"])
@@ -793,7 +1203,6 @@ def test_cli_success_closes_global_resources_once(
     monkeypatch.setattr(evaluator_module, "get_session_factory", lambda: object())
     monkeypatch.setattr(evaluator_module, "run_evaluation", evaluate)
     monkeypatch.setattr(evaluator_module, "write_success_artifact", write_artifact)
-    monkeypatch.setattr(evaluator_module, "_git_sha", lambda: "a" * 40)
     monkeypatch.setattr(evaluator_module, "sha256_file", lambda path: "b" * 64)
 
     metrics = asyncio.run(
@@ -816,6 +1225,7 @@ def test_threshold_failure_does_not_write_success_artifact(tmp_path: Path) -> No
             metrics=_passing_metrics(expected_hit_rate=0.5),
             questions=[],
             git_sha="a" * 40,
+            git_tree_sha="1" * 40,
             fixture_sha256="b" * 64,
             seed_sha256="c" * 64,
             faiss_sha256="d" * 64,

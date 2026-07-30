@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import inspect
 import hashlib
 import json
@@ -366,3 +367,64 @@ def test_default_capture_validates_legacy_before_opening_provider(
         )
 
     assert provider_constructions == []
+
+
+def test_sync_capture_rejects_running_loop_before_provider_construction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline = _baseline_module()
+    provider_constructions: list[str] = []
+
+    class FakeProvider:
+        def __init__(self) -> None:
+            provider_constructions.append("provider")
+
+    class FakeLegacy:
+        def search_vector(self, vector: list[float], *, top_k: int) -> list[str]:
+            return []
+
+    monkeypatch.setattr(baseline, "OpenAIEmbeddingProvider", FakeProvider)
+
+    async def exercise() -> None:
+        with pytest.raises(RuntimeError, match="运行中的事件循环"):
+            baseline.build_default_retrieve_fn(
+                {"top_k": 3, "questions": [{"question": "问题"}]},
+                legacy_retriever=FakeLegacy(),
+            )
+
+    asyncio.run(exercise())
+
+    assert provider_constructions == []
+
+
+def test_async_capture_core_batches_vectors_and_closes_provider() -> None:
+    baseline = _baseline_module()
+    calls: list[list[str]] = []
+
+    class FakeProvider:
+        def __init__(self) -> None:
+            self.close_calls = 0
+
+        async def embed_texts(self, texts: list[str]) -> list[list[float]]:
+            calls.append(list(texts))
+            return [[1.0] + [0.0] * 1023]
+
+        async def aclose(self) -> None:
+            self.close_calls += 1
+
+    class FakeLegacy:
+        def search_vector(self, vector: list[float], *, top_k: int) -> list[str]:
+            return ["k0001"]
+
+    provider = FakeProvider()
+    retrieve = asyncio.run(
+        baseline.build_default_retrieve_fn_async(
+            {"top_k": 3, "questions": [{"question": "问题"}]},
+            provider=provider,
+            legacy_retriever=FakeLegacy(),
+        )
+    )
+
+    assert calls == [["问题"]]
+    assert provider.close_calls == 1
+    assert retrieve("问题", 3) == [{"source_id": "k0001"}]
