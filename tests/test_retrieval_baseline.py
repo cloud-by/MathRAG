@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import hashlib
 import json
 from datetime import datetime, timezone
@@ -282,3 +283,86 @@ def test_cli_writes_safe_baseline_with_injected_retriever(tmp_path: Path) -> Non
     assert all(len(item["sha256"]) == 64 for item in document["artifacts"].values())
     for sensitive_key in ("api_key", "base_url", "authorization", "password", "secret", "token"):
         assert sensitive_key not in serialized
+
+
+def test_default_capture_boundary_uses_new_provider_and_legacy_adapter() -> None:
+    baseline = _baseline_module()
+    source = inspect.getsource(baseline)
+
+    assert "app.services.retriever" not in source
+    assert "app.services.embedding_service" not in source
+    assert "LegacyFaissRetriever" in source
+    assert "OpenAIEmbeddingProvider" in source
+
+
+def test_default_capture_batches_vectors_and_closes_provider() -> None:
+    baseline = _baseline_module()
+    fixture = {
+        "top_k": 3,
+        "questions": [
+            {"question": "问题一"},
+            {"question": "问题二"},
+        ],
+    }
+    vectors = [
+        [1.0] + [0.0] * 1023,
+        [2.0] + [0.0] * 1023,
+    ]
+    provider_calls: list[list[str]] = []
+    search_calls: list[tuple[list[float], int]] = []
+
+    class FakeProvider:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def embed_texts(self, texts: list[str]) -> list[list[float]]:
+            provider_calls.append(list(texts))
+            return vectors
+
+        async def aclose(self) -> None:
+            self.closed = True
+
+    class FakeLegacy:
+        def search_vector(self, vector: list[float], *, top_k: int) -> list[str]:
+            search_calls.append((vector, top_k))
+            return [f"k{len(search_calls):04d}"]
+
+    provider = FakeProvider()
+    retrieve_fn = baseline.build_default_retrieve_fn(
+        fixture,
+        provider=provider,
+        legacy_retriever=FakeLegacy(),
+    )
+
+    assert provider.closed is True
+    assert provider_calls == [["问题一", "问题二"]]
+    assert search_calls == [(vectors[0], 3), (vectors[1], 3)]
+    assert retrieve_fn("问题一", 3) == [{"source_id": "k0001"}]
+    assert retrieve_fn("问题二", 3) == [{"source_id": "k0002"}]
+    with pytest.raises(RuntimeError, match="次数"):
+        retrieve_fn("问题三", 3)
+
+
+def test_default_capture_validates_legacy_before_opening_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    baseline = _baseline_module()
+    provider_constructions: list[bool] = []
+
+    class FakeProvider:
+        def __init__(self) -> None:
+            provider_constructions.append(True)
+
+    class InvalidLegacy:
+        def __init__(self, **kwargs: object) -> None:
+            raise ValueError("invalid legacy artifacts")
+
+    monkeypatch.setattr(baseline, "OpenAIEmbeddingProvider", FakeProvider)
+    monkeypatch.setattr(baseline, "LegacyFaissRetriever", InvalidLegacy)
+
+    with pytest.raises(ValueError, match="invalid legacy"):
+        baseline.build_default_retrieve_fn(
+            {"top_k": 3, "questions": [{"question": "问题"}]}
+        )
+
+    assert provider_constructions == []

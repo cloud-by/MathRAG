@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import json
 import math
 import re
+from collections import deque
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,6 +14,11 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from app.core.config import settings
+from app.infrastructure.embedding.provider import (
+    EmbeddingProvider,
+    OpenAIEmbeddingProvider,
+)
+from scripts.legacy_faiss_retriever import LegacyFaissRetriever
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -314,6 +321,74 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def build_default_retrieve_fn(
+    fixture: Mapping[str, Any],
+    *,
+    provider: EmbeddingProvider | None = None,
+    legacy_retriever: LegacyFaissRetriever | None = None,
+) -> Callable[[str, int], Sequence[Mapping[str, Any]]]:
+    """批量生成查询向量并关闭 Provider，再返回顺序只读 FAISS 调用器。"""
+    questions = fixture.get("questions")
+    top_k = fixture.get("top_k")
+    if not isinstance(questions, list) or not questions:
+        raise ValueError("固定问题集 questions 必须是非空数组")
+    if type(top_k) is not int or not 1 <= top_k <= 10:
+        raise ValueError("固定问题集 top_k 必须是 1 到 10 的整数")
+    question_texts: list[str] = []
+    for question in questions:
+        if not isinstance(question, Mapping):
+            raise ValueError("固定问题集问题必须是对象")
+        text = question.get("question")
+        if type(text) is not str or not text.strip():
+            raise ValueError("固定问题集 question 不能为空")
+        question_texts.append(text)
+
+    active_retriever = legacy_retriever or LegacyFaissRetriever(
+        index_path=settings.FAISS_INDEX_PATH,
+        id_map_path=settings.ID_MAP_PATH,
+    )
+    active_provider = provider or OpenAIEmbeddingProvider()
+
+    async def embed_once() -> list[list[float]]:
+        business_error: BaseException | None = None
+        try:
+            return await active_provider.embed_texts(question_texts)
+        except BaseException as exc:
+            business_error = exc
+            raise
+        finally:
+            try:
+                await active_provider.aclose()
+            except BaseException:
+                if business_error is None:
+                    raise
+
+    vectors = asyncio.run(embed_once())
+    if type(vectors) is not list or len(vectors) != len(question_texts):
+        raise ValueError("Embedding 返回数量与固定问题集不一致")
+
+    prepared = deque(
+        (
+            question_text,
+            [
+                {"source_id": source_id}
+                for source_id in active_retriever.search_vector(vector, top_k=top_k)
+            ],
+        )
+        for question_text, vector in zip(question_texts, vectors, strict=True)
+    )
+
+    def retrieve(question: str, requested_top_k: int) -> Sequence[Mapping[str, Any]]:
+        if not prepared:
+            raise RuntimeError("默认检索调用次数超过固定题集")
+        expected_question, results = prepared.popleft()
+        if question != expected_question or requested_top_k != top_k:
+            raise RuntimeError("默认检索调用顺序或 top_k 与固定题集不一致")
+        return results
+
+    return retrieve
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="捕获当前 FAISS Top-K 检索基线")
     parser.add_argument("--fixture", required=True, type=Path, help="固定问题集 JSON 路径")
@@ -337,9 +412,7 @@ def main(
     )
 
     if retrieve_fn is None:
-        from app.services.retriever import retrieve
-
-        retrieve_fn = retrieve
+        retrieve_fn = build_default_retrieve_fn(fixture)
 
     artifacts = build_artifact_metadata(
         {
