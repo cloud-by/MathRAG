@@ -1,0 +1,54 @@
+from __future__ import annotations
+
+import asyncio
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import asyncpg
+import pytest
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def run_alembic(database_url: str, *args: str) -> None:
+    environment = os.environ.copy()
+    environment["DATABASE_URL"] = database_url
+    subprocess.run(
+        [sys.executable, "-m", "alembic", "-c", "alembic.ini", *args],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+async def vector_extension_version(database_url: str) -> str | None:
+    connection = await asyncpg.connect(database_url.replace("postgresql+asyncpg://", "postgresql://"))
+    try:
+        return await connection.fetchval(
+            "SELECT extversion FROM pg_extension WHERE extname = 'vector'"
+        )
+    finally:
+        await connection.close()
+
+
+def test_migration_upgrade_downgrade_upgrade_round_trip() -> None:
+    database_url = os.getenv("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL 未配置")
+
+    run_alembic(database_url, "downgrade", "base")
+    assert asyncio.run(vector_extension_version(database_url)) is None
+
+    run_alembic(database_url, "upgrade", "head")
+    assert asyncio.run(vector_extension_version(database_url)) == "0.8.5"
+
+    run_alembic(database_url, "downgrade", "base")
+    assert asyncio.run(vector_extension_version(database_url)) is None
+
+    run_alembic(database_url, "upgrade", "head")
+    assert asyncio.run(vector_extension_version(database_url)) == "0.8.5"
