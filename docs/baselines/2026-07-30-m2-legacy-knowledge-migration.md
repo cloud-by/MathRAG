@@ -67,9 +67,11 @@ chunk metadata 的键集合为 `chunk_index,difficulty,has_example,has_steps,leg
 | `data/raw/math_knowledge_seed.jsonl` | `2593f45081b11ab4ae280d1a7fb107791b3099c364f3813f215a73fa7369d062` |
 | `data/processed/kb_chunks.jsonl` | `a0334a626d7e54ce04a447861af1616da26ad8b012d81f6720aa1d404539e5aa` |
 
+上表记录 M2 Windows 验收工作树的 CRLF 原始字节哈希。Git 换行策略可能改变工作树字节，但不能改变知识内容；跨平台复核应将 UTF-8 文本换行规范化为 LF 后计算摘要：raw 为 `b87355849f828ae219ba4e03315436d65a1fce749db96740ae645a74c231e4b0`，processed 为 `f723c518f13c4a747b515785979d613139e9c6ec3e037a9210b0ba79c94032ad`。导入前后仍须另行比较未规范化的原始字节哈希，证明导入过程没有改写源文件。
+
 ## 回归证据
 
-- 显式配置 `TEST_DATABASE_URL` 指向专用测试库后运行全量 `.\.venv\Scripts\python.exe -m pytest -q`：`134 passed, 1 warning in 13.64s`，无 skipped。唯一警告是既有 `StarletteDeprecationWarning`（`starlette.testclient` 与 httpx）；测试完成后的测试库计数为 `knowledge_items=0`、`knowledge_chunks=0`。
+- M2 合并到 `main` 后，显式配置 `TEST_DATABASE_URL` 指向专用测试库并将 pytest 临时目录放到可写工作区，运行全量测试：`144 passed, 1 warning in 16.50s`，无 skipped。唯一警告是既有 `StarletteDeprecationWarning`（`starlette.testclient` 与 httpx）；测试完成后的测试库迁移为 `0002_create_knowledge_tables`，计数为 `knowledge_items=0`、`knowledge_chunks=0`。
 - `.\.venv\Scripts\python.exe -m pytest tests\test_retrieval_baseline.py -q`：`16 passed in 0.15s`。该数字是测试用例数，不是固定题数量。本次现场读取同一 fixture 的 26 题，并调用当前 `retrieve(question, top_k=3)`，得到 `expected_hit_count=26`、命中率 `1.0`，即 26/26；本次没有写出新的 M2 FAISS artifact。
 - 可审计的 FAISS 回归证据使用既有 `docs/baselines/artifacts/faiss-top3-m1-regression.json`：artifact 自身 SHA-256 为 `b7077178a1a8b23127a5ca2b392bb913c9249f9b7b844d8acda3a0e98fb7692d`，其中记录的 26/26 结果及以下三项 hash 均与本次当前文件一致：`data/index/faiss.index`=`e2520504ff2b392bbb56aea792046a752a217a4abf75ca8dec516fd219149192`，`data/index/id_map.json`=`6fe97be89ad8398d4ed636545b4d7939b5832f93c5602a2d65b4a40781cf8331`，`data/processed/kb_chunks.jsonl`=`a0334a626d7e54ce04a447861af1616da26ad8b012d81f6720aa1d404539e5aa`。该 artifact 仅含模型和 provider-origin 的 SHA-256 等安全元数据，不含 secret。现场重跑完整 artifact 需要 embedding 配置及网络，不能把该重跑误称为本次新产物。
 - `.\.venv\Scripts\python.exe -m pytest tests\integration\knowledge\test_import_rollback.py -q`：`1 passed in 0.62s`。

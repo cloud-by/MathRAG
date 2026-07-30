@@ -21,9 +21,15 @@ from tests.integration.database_safety import require_test_database_url
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-RAW_SHA256 = "2593f45081b11ab4ae280d1a7fb107791b3099c364f3813f215a73fa7369d062"
-PROCESSED_SHA256 = "a0334a626d7e54ce04a447861af1616da26ad8b012d81f6720aa1d404539e5aa"
+RAW_CONTENT_SHA256 = "b87355849f828ae219ba4e03315436d65a1fce749db96740ae645a74c231e4b0"
+PROCESSED_CONTENT_SHA256 = "f723c518f13c4a747b515785979d613139e9c6ec3e037a9210b0ba79c94032ad"
 COLLECTION_SHA256 = "82a76468c817454de1b87c825488db6b31e6778f9d058f9a8345d7c67590d4c5"
+
+
+def normalized_utf8_sha256(path: Path) -> str:
+    """按 UTF-8/LF 规范化内容计算跨平台稳定摘要。"""
+    content = path.read_text(encoding="utf-8")
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 def _summary() -> LegacyImportSummary:
@@ -202,8 +208,8 @@ def test_legacy_import_cli_is_idempotent_and_lossless() -> None:
         }
         assert before_raw == hashlib.sha256(settings.RAW_KB_PATH.read_bytes()).hexdigest()
         assert before_processed == hashlib.sha256(settings.PROCESSED_KB_PATH.read_bytes()).hexdigest()
-        assert before_raw == RAW_SHA256
-        assert before_processed == PROCESSED_SHA256
+        assert normalized_utf8_sha256(settings.RAW_KB_PATH) == RAW_CONTENT_SHA256
+        assert normalized_utf8_sha256(settings.PROCESSED_KB_PATH) == PROCESSED_CONTENT_SHA256
 
         async def verify() -> None:
             engine = create_async_engine(test_database_url)
