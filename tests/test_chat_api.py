@@ -4,8 +4,10 @@ import asyncio
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
+from openai import APIError, APIStatusError
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.main import app
@@ -211,9 +213,104 @@ def test_lifespan_preserves_app_error_while_attempting_both_cleanups(
     assert events == ["validate", "body", "embedding", "database"]
 
 
-def test_chat_returns_400_when_pipeline_raises_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_lifespan_rebuilds_rag_dependencies_and_preserves_app_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import main
+    from app.services import rag_pipeline as rag_pipeline_module
+
+    events: list[str] = []
+    built_searches: list[object] = []
+    provider_calls = 0
+    database_calls = 0
+
+    def build_search() -> object:
+        search = object()
+        built_searches.append(search)
+        events.append("build")
+        return search
+
+    def reset_pipeline() -> None:
+        events.append("reset")
+        rag_pipeline_module._rag_pipeline = None
+
+    async def dispose_provider() -> None:
+        nonlocal provider_calls
+        provider_calls += 1
+        events.append(f"embedding-{provider_calls}")
+        if provider_calls == 2:
+            raise RuntimeError("embedding cleanup failed")
+
+    async def dispose_database() -> None:
+        nonlocal database_calls
+        database_calls += 1
+        events.append(f"database-{database_calls}")
+        if database_calls == 2:
+            raise RuntimeError("database cleanup failed")
+
+    monkeypatch.setattr(rag_pipeline_module, "_rag_pipeline", None)
+    monkeypatch.setattr(
+        rag_pipeline_module,
+        "build_knowledge_search_service",
+        build_search,
+    )
+    monkeypatch.setattr(
+        rag_pipeline_module,
+        "get_query_planner",
+        lambda: SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        main,
+        "settings",
+        SimpleNamespace(validate_runtime=lambda: events.append("validate")),
+    )
+    monkeypatch.setattr(main, "reset_rag_pipeline", reset_pipeline)
+    monkeypatch.setattr(main, "dispose_embedding_provider", dispose_provider)
+    monkeypatch.setattr(main, "dispose_engine", dispose_database)
+
+    async def exercise() -> tuple[object, object]:
+        async with main.lifespan(main.app):
+            first = rag_pipeline_module.get_rag_pipeline()
+            events.append("body-1")
+
+        with pytest.raises(RuntimeError, match="application failed"):
+            async with main.lifespan(main.app):
+                second = rag_pipeline_module.get_rag_pipeline()
+                events.append("body-2")
+                raise RuntimeError("application failed")
+
+        return first, second
+
+    first, second = asyncio.run(exercise())
+
+    assert first is not second
+    assert len(built_searches) == 2
+    assert events == [
+        "validate",
+        "build",
+        "body-1",
+        "reset",
+        "embedding-1",
+        "database-1",
+        "validate",
+        "build",
+        "body-2",
+        "reset",
+        "embedding-2",
+        "database-2",
+    ]
+
+
+def test_chat_returns_400_when_pipeline_raises_rag_input_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services import rag_pipeline as rag_pipeline_module
+
+    error_type = getattr(rag_pipeline_module, "RAGInputError", None)
+    assert isinstance(error_type, type)
+
     async def mock_chat_with_rag(question: str, history: List[Dict[str, str]] | None = None, top_k: int | None = None) -> Dict[str, Any]:
-        raise ValueError("question 不能为空")
+        raise error_type("question 不能为空")
 
     monkeypatch.setattr("app.api.chat.chat_with_rag", mock_chat_with_rag)
 
@@ -229,6 +326,132 @@ def test_chat_returns_400_when_pipeline_raises_value_error(monkeypatch: pytest.M
     assert response.status_code == 400
     data = response.json()
     assert data["detail"] == "question 不能为空"
+
+
+def test_chat_generic_value_error_is_fixed_500_without_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "llm-parse-sensitive-marker"
+
+    async def mock_chat_with_rag(
+        question: str,
+        history: List[Dict[str, str]] | None = None,
+        top_k: int | None = None,
+    ) -> Dict[str, Any]:
+        raise ValueError(marker)
+
+    monkeypatch.setattr("app.api.chat.chat_with_rag", mock_chat_with_rag)
+
+    response = client.post(
+        "/api/chat",
+        json={"question": "测试问题", "history": [], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "系统内部错误。"
+    assert marker not in response.text
+
+
+def test_chat_non_dict_pipeline_result_is_fixed_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def mock_chat_with_rag(
+        question: str,
+        history: List[Dict[str, str]] | None = None,
+        top_k: int | None = None,
+    ) -> Any:
+        return ["not", "an", "object"]
+
+    monkeypatch.setattr("app.api.chat.chat_with_rag", mock_chat_with_rag)
+
+    response = client.post(
+        "/api/chat",
+        json={"question": "测试问题", "history": [], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "系统内部错误。"
+
+
+def test_chat_response_validation_error_is_fixed_500_without_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "response-validation-sensitive-marker"
+
+    async def mock_chat_with_rag(
+        question: str,
+        history: List[Dict[str, str]] | None = None,
+        top_k: int | None = None,
+    ) -> Dict[str, Any]:
+        result = build_mock_result()
+        result["references"][0]["score"] = marker
+        return result
+
+    monkeypatch.setattr("app.api.chat.chat_with_rag", mock_chat_with_rag)
+
+    response = client.post(
+        "/api/chat",
+        json={"question": "测试问题", "history": [], "top_k": 3},
+    )
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "系统内部错误。"
+    assert marker not in response.text
+
+
+def test_chat_api_status_error_is_fixed_502_without_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "upstream-status-sensitive-marker"
+    request = httpx.Request("POST", "https://llm.invalid/v1/chat/completions")
+    response = httpx.Response(
+        500,
+        request=request,
+        json={"error": {"message": marker}},
+    )
+
+    async def mock_chat_with_rag(
+        question: str,
+        history: List[Dict[str, str]] | None = None,
+        top_k: int | None = None,
+    ) -> Dict[str, Any]:
+        raise APIStatusError(marker, response=response, body=response.json())
+
+    monkeypatch.setattr("app.api.chat.chat_with_rag", mock_chat_with_rag)
+
+    api_response = client.post(
+        "/api/chat",
+        json={"question": "测试问题", "history": [], "top_k": 3},
+    )
+
+    assert api_response.status_code == 502
+    assert api_response.json()["detail"] == "大模型 API 返回错误。"
+    assert marker not in api_response.text
+
+
+def test_chat_api_error_is_fixed_502_without_marker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "upstream-api-sensitive-marker"
+    request = httpx.Request("POST", "https://llm.invalid/v1/chat/completions")
+
+    async def mock_chat_with_rag(
+        question: str,
+        history: List[Dict[str, str]] | None = None,
+        top_k: int | None = None,
+    ) -> Dict[str, Any]:
+        raise APIError(marker, request, body=None)
+
+    monkeypatch.setattr("app.api.chat.chat_with_rag", mock_chat_with_rag)
+
+    response = client.post(
+        "/api/chat",
+        json={"question": "测试问题", "history": [], "top_k": 3},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "大模型 API 调用失败。"
+    assert marker not in response.text
 
 
 def test_chat_returns_503_without_leaking_database_error(monkeypatch: pytest.MonkeyPatch) -> None:

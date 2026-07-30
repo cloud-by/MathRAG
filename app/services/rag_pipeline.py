@@ -19,6 +19,10 @@ class RAGConfig:
     default_top_k: int = settings.TOP_K
 
 
+class RAGInputError(ValueError):
+    """RAG 问答入口的用户输入错误。"""
+
+
 class RAGPipeline:
     def __init__(
         self,
@@ -39,11 +43,11 @@ class RAGPipeline:
     ) -> Dict[str, Any]:
         question = str(question or "").strip()
         if not question:
-            raise ValueError("question 不能为空")
+            raise RAGInputError("question 不能为空")
 
         k = self.config.default_top_k if top_k is None else top_k
         if type(k) is not int or not 1 <= k <= 10:
-            raise ValueError("top_k 必须是 1 到 10 的整数")
+            raise RAGInputError("top_k 必须是 1 到 10 的整数")
 
         plan = await asyncio.to_thread(
             self._planner.create_plan,
@@ -257,6 +261,11 @@ class RAGPipeline:
 
 
 _rag_pipeline: RAGPipeline | None = None
+
+
+def reset_rag_pipeline() -> None:
+    global _rag_pipeline
+    _rag_pipeline = None
 
 
 def get_rag_pipeline() -> RAGPipeline:

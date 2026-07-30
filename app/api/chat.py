@@ -15,7 +15,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.modules.knowledge.errors import EmbeddingUnavailableError
 from app.schemas.chat import ChatRequest, ChatResponse
-from app.services.rag_pipeline import chat_with_rag
+from app.services.rag_pipeline import RAGInputError, chat_with_rag
 
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -67,7 +67,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
             detail="向量服务暂不可用。",
         ) from exc
 
-    except ValueError as exc:
+    except RAGInputError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
@@ -98,28 +98,15 @@ async def chat(request: ChatRequest) -> ChatResponse:
         ) from exc
 
     except APIStatusError as exc:
-        message = "大模型 API 返回错误。"
-
-        try:
-            error_obj = getattr(exc, "response", None)
-            if error_obj is not None:
-                payload = error_obj.json()
-                if isinstance(payload, dict):
-                    error_info = payload.get("error", {})
-                    if isinstance(error_info, dict):
-                        message = error_info.get("message") or message
-        except Exception:
-            pass
-
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=message,
+            detail="大模型 API 返回错误。",
         ) from exc
 
     except APIError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"大模型 API 调用失败：{exc}",
+            detail="大模型 API 调用失败。",
         ) from exc
 
     except Exception as exc:

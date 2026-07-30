@@ -7,10 +7,13 @@ from types import SimpleNamespace
 from typing import Any, Dict, List
 from uuid import UUID
 
+import pytest
+
 from app.services.agentic_rag import QueryPlanner
 from app.modules.knowledge.search import KnowledgeSearchHit
 from app.services import rag_pipeline as rag_pipeline_module
 from app.services.rag_pipeline import RAGPipeline, chat_with_rag
+from scripts import test_rag as test_rag_cli
 
 
 def _make_hit(
@@ -55,6 +58,101 @@ def test_query_planner_fallback_to_original_question(monkeypatch) -> None:
 def test_rag_pipeline_and_chat_wrapper_are_async() -> None:
     assert inspect.iscoroutinefunction(RAGPipeline.chat)
     assert inspect.iscoroutinefunction(chat_with_rag)
+
+
+def test_reset_rag_pipeline_discards_cached_pipeline(monkeypatch) -> None:
+    reset = getattr(rag_pipeline_module, "reset_rag_pipeline", None)
+    assert callable(reset)
+
+    monkeypatch.setattr(rag_pipeline_module, "_rag_pipeline", SimpleNamespace())
+    reset()
+
+    assert rag_pipeline_module._rag_pipeline is None
+
+
+def test_rag_pipeline_uses_dedicated_error_for_user_input() -> None:
+    error_type = getattr(rag_pipeline_module, "RAGInputError", None)
+    assert isinstance(error_type, type)
+    assert issubclass(error_type, ValueError)
+
+    pipeline = RAGPipeline(knowledge_search=SimpleNamespace())
+
+    with pytest.raises(error_type, match="question 不能为空"):
+        asyncio.run(pipeline.chat(question="   "))
+
+    with pytest.raises(error_type, match="top_k 必须是 1 到 10 的整数"):
+        asyncio.run(pipeline.chat(question="测试问题", top_k=0))
+
+
+def test_test_rag_cli_awaits_pipeline_for_default_output(
+    monkeypatch,
+    capsys,
+) -> None:
+    calls: list[tuple[str, list[Dict[str, Any]], int]] = []
+
+    async def fake_chat_with_rag(
+        question: str,
+        history: list[Dict[str, Any]],
+        top_k: int,
+    ) -> Dict[str, Any]:
+        calls.append((question, history, top_k))
+        return {
+            "question": question,
+            "answer": "测试回答",
+            "steps": [],
+            "used_knowledge": [],
+            "related_questions": [],
+            "references": [],
+        }
+
+    monkeypatch.setattr(
+        test_rag_cli,
+        "parse_args",
+        lambda: SimpleNamespace(
+            question="测试问题",
+            top_k=2,
+            show_references=False,
+            show_full_json=False,
+        ),
+    )
+    monkeypatch.setattr(test_rag_cli, "chat_with_rag", fake_chat_with_rag)
+
+    test_rag_cli.main()
+
+    assert calls == [("测试问题", [], 2)]
+    output = capsys.readouterr().out
+    assert "问题：测试问题" in output
+    assert "回答：\n测试回答" in output
+
+
+def test_test_rag_cli_awaits_pipeline_for_full_json(
+    monkeypatch,
+    capsys,
+) -> None:
+    async def fake_chat_with_rag(
+        question: str,
+        history: list[Dict[str, Any]],
+        top_k: int,
+    ) -> Dict[str, Any]:
+        return {"question": question, "answer": "完整结果", "references": []}
+
+    monkeypatch.setattr(
+        test_rag_cli,
+        "parse_args",
+        lambda: SimpleNamespace(
+            question="完整输出",
+            top_k=3,
+            show_references=False,
+            show_full_json=True,
+        ),
+    )
+    monkeypatch.setattr(test_rag_cli, "chat_with_rag", fake_chat_with_rag)
+
+    test_rag_cli.main()
+
+    payload = capsys.readouterr().out
+    assert '"question": "完整输出"' in payload
+    assert '"answer": "完整结果"' in payload
 
 
 def test_rag_pipeline_uses_one_batched_knowledge_search(monkeypatch) -> None:

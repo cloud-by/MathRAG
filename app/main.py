@@ -16,6 +16,7 @@ from app.infrastructure.database.session import dispose_engine
 from app.infrastructure.embedding.provider import dispose_embedding_provider
 from app.modules.system.router import router as system_router
 from app.schemas.chat import HealthResponse
+from app.services.rag_pipeline import reset_rag_pipeline
 
 
 @asynccontextmanager
@@ -28,6 +29,7 @@ async def lifespan(app: FastAPI):
         application_error = exc
         raise
     finally:
+        reset_rag_pipeline()
         cleanup_error: BaseException | None = None
         try:
             await dispose_embedding_provider()

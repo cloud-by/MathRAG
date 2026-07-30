@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -24,10 +25,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    result = chat_with_rag(
-        question=args.question,
-        history=[],
-        top_k=args.top_k,
+    result = asyncio.run(
+        chat_with_rag(
+            question=args.question,
+            history=[],
+            top_k=args.top_k,
+        )
     )
 
     if args.show_full_json:
