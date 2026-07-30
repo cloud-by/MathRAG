@@ -1,7 +1,8 @@
 {
-  "schema_version": "1.0",
-  "generated_at": "2026-07-30T16:35:35.302027Z",
-  "git_sha": "8b8f766786ec954561c195b094418ae9fed34c37",
+  "schema_version": "1.1",
+  "generated_at": "2026-07-30T17:35:13.232955Z",
+  "git_sha": "05a030470e96e2282d718c980295236154154017",
+  "git_tree_sha": "cded06801d6bc4be17d008f52b5136c500c0b07b",
   "inputs": {
     "fixture_sha256": "7225124ac0b7af83754401e8d77b9cccc5fb7da67e0cf0f853beaadfb72f49f5",
     "seed_sha256": "b87355849f828ae219ba4e03315436d65a1fce749db96740ae645a74c231e4b0",
@@ -13,13 +14,20 @@
     "dimensions": 1024,
     "provider_origin_sha256": "ec1f29107de2c3a3df64b95fe366d7c640c5a610fdc5b6804611630835b4dafc"
   },
+  "methodology": {
+    "top_k": 3,
+    "warmup_queries": 1,
+    "warmup_strategy": "first_query_vector",
+    "timed_queries": 26,
+    "latency_scope": "repository_sql_only"
+  },
   "metrics": {
     "total_questions": 26,
     "expected_hit_count": 26,
     "expected_hit_rate": 1.0,
     "average_top_k_overlap": 1.0,
-    "pgvector_p50_ms": 11.089799998444505,
-    "pgvector_p95_ms": 14.642399997683242
+    "pgvector_p50_ms": 15.102600002137478,
+    "pgvector_p95_ms": 31.91339999466436
   },
   "questions": [
     {
@@ -37,7 +45,7 @@
         "k0002",
         "k0005"
       ],
-      "pgvector_latency_ms": 9.368500002892688,
+      "pgvector_latency_ms": 25.357699996675365,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -57,7 +65,7 @@
         "k0003",
         "k0007"
       ],
-      "pgvector_latency_ms": 8.261200004199054,
+      "pgvector_latency_ms": 17.697300005238503,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -77,7 +85,7 @@
         "k0002",
         "k0022"
       ],
-      "pgvector_latency_ms": 8.130199996230658,
+      "pgvector_latency_ms": 17.397300005541183,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -97,7 +105,7 @@
         "k0005",
         "k0006"
       ],
-      "pgvector_latency_ms": 8.721000005607493,
+      "pgvector_latency_ms": 31.91339999466436,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -117,7 +125,7 @@
         "k0004",
         "k0016"
       ],
-      "pgvector_latency_ms": 9.178100001008715,
+      "pgvector_latency_ms": 44.36909999640193,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -137,7 +145,7 @@
         "k0004",
         "k0005"
       ],
-      "pgvector_latency_ms": 8.182699995813891,
+      "pgvector_latency_ms": 14.67689999844879,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -157,7 +165,7 @@
         "k0008",
         "k0016"
       ],
-      "pgvector_latency_ms": 8.126000000629574,
+      "pgvector_latency_ms": 15.102600002137478,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -177,7 +185,7 @@
         "k0006",
         "k0004"
       ],
-      "pgvector_latency_ms": 7.598500000312924,
+      "pgvector_latency_ms": 27.691400006006006,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -197,7 +205,7 @@
         "k0021",
         "k0020"
       ],
-      "pgvector_latency_ms": 7.6535999978659675,
+      "pgvector_latency_ms": 15.557799997623079,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -217,7 +225,7 @@
         "k0023",
         "k0021"
       ],
-      "pgvector_latency_ms": 8.483300000079907,
+      "pgvector_latency_ms": 14.998500002548099,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -237,7 +245,7 @@
         "k0005",
         "k0009"
       ],
-      "pgvector_latency_ms": 9.216500002366956,
+      "pgvector_latency_ms": 13.138900001649745,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -257,7 +265,7 @@
         "k0018",
         "k0010"
       ],
-      "pgvector_latency_ms": 14.98600000195438,
+      "pgvector_latency_ms": 16.47670000238577,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -277,7 +285,7 @@
         "k0005",
         "k0004"
       ],
-      "pgvector_latency_ms": 11.089799998444505,
+      "pgvector_latency_ms": 15.111100001377054,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -297,7 +305,7 @@
         "k0017",
         "k0006"
       ],
-      "pgvector_latency_ms": 11.252099997363985,
+      "pgvector_latency_ms": 15.75089999823831,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -317,7 +325,7 @@
         "k0014",
         "k0006"
       ],
-      "pgvector_latency_ms": 12.799700001778547,
+      "pgvector_latency_ms": 17.265099995711353,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -337,7 +345,7 @@
         "k0007",
         "k0005"
       ],
-      "pgvector_latency_ms": 14.642399997683242,
+      "pgvector_latency_ms": 16.330999998899642,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -357,7 +365,7 @@
         "k0014",
         "k0008"
       ],
-      "pgvector_latency_ms": 13.327799999387935,
+      "pgvector_latency_ms": 14.97630000085337,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -377,7 +385,7 @@
         "k0012",
         "k0008"
       ],
-      "pgvector_latency_ms": 13.957799994386733,
+      "pgvector_latency_ms": 13.958900002762675,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -397,7 +405,7 @@
         "k0022",
         "k0024"
       ],
-      "pgvector_latency_ms": 10.909999997238629,
+      "pgvector_latency_ms": 12.174900002719369,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -417,7 +425,7 @@
         "k0023",
         "k0009"
       ],
-      "pgvector_latency_ms": 12.083399997209199,
+      "pgvector_latency_ms": 13.540899999497924,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -437,7 +445,7 @@
         "k0009",
         "k0023"
       ],
-      "pgvector_latency_ms": 13.458400004310533,
+      "pgvector_latency_ms": 13.767199998255819,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -457,7 +465,7 @@
         "k0003",
         "k0016"
       ],
-      "pgvector_latency_ms": 14.584800002921838,
+      "pgvector_latency_ms": 11.772799996833783,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -477,7 +485,7 @@
         "k0010",
         "k0025"
       ],
-      "pgvector_latency_ms": 14.090100004978012,
+      "pgvector_latency_ms": 15.231800003675744,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -497,7 +505,7 @@
         "k0026",
         "k0019"
       ],
-      "pgvector_latency_ms": 13.31150000623893,
+      "pgvector_latency_ms": 15.04189999832306,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -517,7 +525,7 @@
         "k0023",
         "k0019"
       ],
-      "pgvector_latency_ms": 12.557499998365529,
+      "pgvector_latency_ms": 12.112600001273677,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
@@ -537,7 +545,7 @@
         "k0024",
         "k0020"
       ],
-      "pgvector_latency_ms": 12.972799995623063,
+      "pgvector_latency_ms": 11.96469999558758,
       "expected_hit": true,
       "top_k_overlap": 1.0,
       "top_k": 3
