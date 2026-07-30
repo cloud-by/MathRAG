@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import get_type_hints
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import CheckConstraint, ForeignKeyConstraint, UniqueConstraint, inspect
+from sqlalchemy import CheckConstraint, ForeignKeyConstraint, Index, UniqueConstraint, inspect
 from sqlalchemy.orm import Mapped
 
 from app.modules.knowledge.models import KnowledgeChunk, KnowledgeItem
@@ -18,6 +18,15 @@ def constraint_names(table: object, constraint_type: type[object]) -> set[str | 
         constraint.name
         for constraint in table.constraints  # type: ignore[attr-defined]
         if isinstance(constraint, constraint_type)
+    }
+
+
+def index_columns(table: object) -> dict[str | None, tuple[str, ...]]:
+    """返回索引名称及其有序列名。"""
+    return {
+        index.name: tuple(column.name for column in index.columns)
+        for index in table.indexes  # type: ignore[attr-defined]
+        if isinstance(index, Index)
     }
 
 
@@ -42,6 +51,10 @@ def test_knowledge_item_table_maps_required_columns_and_constraints() -> None:
         "ck_knowledge_items_status",
         "ck_knowledge_items_revision",
     }
+    assert index_columns(table)["ix_knowledge_items_visibility_status"] == (
+        "visibility",
+        "status",
+    )
 
 
 def test_knowledge_chunk_table_maps_foreign_key_vector_and_metadata_column() -> None:
@@ -64,7 +77,20 @@ def test_knowledge_chunk_table_maps_foreign_key_vector_and_metadata_column() -> 
     assert constraint_names(table, CheckConstraint) == {
         "ck_knowledge_chunks_chunk_index",
         "ck_knowledge_chunks_status",
+        "ck_knowledge_chunks_ready_requires_embedding",
     }
+    readiness_constraint = next(
+        constraint
+        for constraint in table.constraints
+        if constraint.name == "ck_knowledge_chunks_ready_requires_embedding"
+    )
+    assert str(readiness_constraint.sqltext) == (
+        "status != 'ready' OR (embedding IS NOT NULL AND embedding_model IS NOT NULL)"
+    )
+    assert index_columns(table)["ix_knowledge_chunks_status_embedding_model"] == (
+        "status",
+        "embedding_model",
+    )
 
 
 def test_knowledge_item_and_chunk_relationships_use_orphan_cascade() -> None:

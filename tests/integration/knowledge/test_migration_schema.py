@@ -19,13 +19,16 @@ from tests.integration.database_safety import require_test_database_url
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MIGRATION_PATH = PROJECT_ROOT / "alembic" / "versions" / "0002_create_knowledge_tables.py"
+VECTOR_READINESS_MIGRATION_PATH = (
+    PROJECT_ROOT / "alembic" / "versions" / "0003_enforce_vector_readiness.py"
+)
 
 
-def run_alembic(database_url: str, *args: str) -> None:
+def run_alembic(database_url: str, *args: str) -> subprocess.CompletedProcess[str]:
     """在测试数据库中运行指定的 Alembic 命令。"""
     environment = os.environ.copy()
     environment["DATABASE_URL"] = database_url
-    subprocess.run(
+    return subprocess.run(
         [sys.executable, "-m", "alembic", "-c", "alembic.ini", *args],
         cwd=PROJECT_ROOT,
         env=environment,
@@ -113,6 +116,25 @@ def test_knowledge_migration_is_self_contained() -> None:
     assert "onupdate=" not in source
 
 
+def test_vector_readiness_migration_is_self_contained_and_uses_btree_indexes() -> None:
+    """向量就绪迁移不得依赖应用模块或创建近似向量索引。"""
+    source = VECTOR_READINESS_MIGRATION_PATH.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    imported_modules = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported_modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            imported_modules.add(node.module)
+
+    lowered_source = source.lower()
+    assert all(not module.startswith("app.") for module in imported_modules)
+    assert 'revision: str = "0003_enforce_vector_readiness"' in source
+    assert 'down_revision: str | none = "0002_create_knowledge_tables"' in lowered_source
+    assert "hnsw" not in lowered_source
+    assert "ivfflat" not in lowered_source
+
+
 async def fetch_column_contract(database_url: str) -> dict[tuple[str, str], asyncpg.Record]:
     """读取知识表每一列的 PostgreSQL 类型、可空性和服务端默认值。"""
     connection = await asyncpg.connect(
@@ -166,8 +188,9 @@ async def verify_database_constraints(database_url: str) -> None:
     try:
         await connection.execute(
             """
-            INSERT INTO knowledge_items (id, category, title, content, difficulty)
-            VALUES ($1, 'algebra', '测试条目', '测试内容', 'easy')
+            INSERT INTO knowledge_items
+                (id, category, title, content, difficulty, visibility, status)
+            VALUES ($1, 'algebra', '测试条目', '测试内容', 'easy', 'public', 'ready')
             """,
             item_id,
         )
@@ -232,6 +255,37 @@ async def verify_database_constraints(database_url: str) -> None:
             uuid4(),
             item_id,
         )
+        await assert_check_violation(
+            connection,
+            """
+            INSERT INTO knowledge_chunks
+                (id, knowledge_item_id, chunk_index, retrieval_text, answer_context, status)
+            VALUES ($1, $2, 2, '缺少向量的就绪分块', '回答上下文', 'ready')
+            """,
+            uuid4(),
+            item_id,
+        )
+        vector = "[" + ",".join(["0"] * 1024) + "]"
+        await connection.execute(
+            """
+            INSERT INTO knowledge_chunks
+                (id, knowledge_item_id, chunk_index, retrieval_text, answer_context,
+                 embedding, embedding_model, status)
+            VALUES ($1, $2, 3, '合法就绪分块', '回答上下文', $3::vector, 'test-model', 'ready')
+            """,
+            uuid4(),
+            item_id,
+            vector,
+        )
+        await connection.execute(
+            """
+            INSERT INTO knowledge_chunks
+                (id, knowledge_item_id, chunk_index, retrieval_text, answer_context, status)
+            VALUES ($1, $2, 4, '待处理分块', '回答上下文', 'pending')
+            """,
+            uuid4(),
+            item_id,
+        )
 
         await connection.execute("DELETE FROM knowledge_items WHERE id = $1", item_id)
         assert await connection.fetchval(
@@ -284,12 +338,15 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
             "fk_knowledge_chunks_knowledge_item_id_knowledge_items",
             "ck_knowledge_chunks_chunk_index",
             "ck_knowledge_chunks_status",
+            "ck_knowledge_chunks_ready_requires_embedding",
             "uq_knowledge_chunks_knowledge_item_id_chunk_index",
         } <= constraints
         assert {
             "ix_knowledge_items_category",
             "ix_knowledge_items_status",
             "ix_knowledge_chunks_status",
+            "ix_knowledge_items_visibility_status",
+            "ix_knowledge_chunks_status_embedding_model",
         } <= indexes.keys()
         assert indexes["ix_knowledge_items_category"] == (
             "CREATE INDEX ix_knowledge_items_category "
@@ -302,6 +359,18 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
         assert indexes["ix_knowledge_chunks_status"] == (
             "CREATE INDEX ix_knowledge_chunks_status "
             "ON public.knowledge_chunks USING btree (status)"
+        )
+        assert indexes["ix_knowledge_items_visibility_status"] == (
+            "CREATE INDEX ix_knowledge_items_visibility_status "
+            "ON public.knowledge_items USING btree (visibility, status)"
+        )
+        assert indexes["ix_knowledge_chunks_status_embedding_model"] == (
+            "CREATE INDEX ix_knowledge_chunks_status_embedding_model "
+            "ON public.knowledge_chunks USING btree (status, embedding_model)"
+        )
+        assert all(
+            "hnsw" not in definition.lower() and "ivfflat" not in definition.lower()
+            for definition in indexes.values()
         )
         assert vector_extension_exists is True
         assert set(columns) == {
@@ -426,6 +495,13 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
             r"chunk_index\s*>=\s*0",
             constraint_definitions["ck_knowledge_chunks_chunk_index"],
         )
+        readiness_definition = constraint_definitions[
+            "ck_knowledge_chunks_ready_requires_embedding"
+        ].lower()
+        assert "status" in readiness_definition
+        assert "ready" in readiness_definition
+        assert "embedding is not null" in readiness_definition
+        assert "embedding_model is not null" in readiness_definition
         assert constraint_definitions["uq_knowledge_items_legacy_id"] == "UNIQUE (legacy_id)"
         assert (
             constraint_definitions["uq_knowledge_chunks_knowledge_item_id_chunk_index"]
@@ -436,6 +512,20 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
             == "FOREIGN KEY (knowledge_item_id) REFERENCES knowledge_items(id) ON DELETE CASCADE"
         )
         asyncio.run(verify_database_constraints(database_url))
+
+        run_alembic(database_url, "downgrade", "0002_create_knowledge_tables")
+        _, _, downgraded_constraints, downgraded_indexes, _ = asyncio.run(
+            fetch_schema(database_url)
+        )
+        assert "ck_knowledge_chunks_ready_requires_embedding" not in downgraded_constraints
+        assert "ix_knowledge_items_visibility_status" not in downgraded_indexes
+        assert "ix_knowledge_chunks_status_embedding_model" not in downgraded_indexes
+
+        run_alembic(database_url, "upgrade", "head")
+        current = run_alembic(database_url, "current")
+        assert "0003_enforce_vector_readiness (head)" in current.stdout
+        check = run_alembic(database_url, "check")
+        assert "No new upgrade operations detected." in check.stdout
 
         run_alembic(database_url, "downgrade", "0001_enable_vector_extension")
         tables, _, _, _, vector_extension_exists = asyncio.run(fetch_schema(database_url))

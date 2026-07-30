@@ -6,7 +6,17 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import CheckConstraint, ForeignKeyConstraint, Integer, String, Text, UniqueConstraint, func, text
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -27,6 +37,7 @@ class KnowledgeItem(Base):
             name="status",
         ),
         CheckConstraint("revision > 0", name="revision"),
+        Index("ix_knowledge_items_visibility_status", "visibility", "status"),
     )
 
     id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -104,11 +115,16 @@ class KnowledgeChunk(Base):
         ),
         CheckConstraint("chunk_index >= 0", name="chunk_index"),
         CheckConstraint("status IN ('pending', 'ready', 'failed')", name="status"),
+        CheckConstraint(
+            "status != 'ready' OR (embedding IS NOT NULL AND embedding_model IS NOT NULL)",
+            name="ready_requires_embedding",
+        ),
         UniqueConstraint(
             "knowledge_item_id",
             "chunk_index",
             name="uq_knowledge_chunks_knowledge_item_id_chunk_index",
         ),
+        Index("ix_knowledge_chunks_status_embedding_model", "status", "embedding_model"),
     )
 
     id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True, default=uuid4)
