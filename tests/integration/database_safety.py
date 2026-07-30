@@ -40,10 +40,8 @@ def _connection_identity(url: URL) -> tuple[
     str | None,
     int | None,
     str | None,
-    str | None,
-    tuple[tuple[str, tuple[str, ...]], ...],
 ]:
-    """提取不含密码的规范化连接身份，用于拒绝同库误配。"""
+    """提取物理数据库身份，不使用凭据或非路由连接选项。"""
     try:
         port = url.port
     except ValueError as error:
@@ -54,7 +52,5 @@ def _connection_identity(url: URL) -> tuple[
         url.get_backend_name(),
         url.host.lower() if url.host else None,
         port if port is not None else default_port,
-        url.username,
         url.database,
-        tuple(sorted(url.normalized_query.items())),
     )

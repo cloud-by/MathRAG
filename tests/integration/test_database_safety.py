@@ -36,6 +36,22 @@ def test_rejects_when_database_and_test_urls_identify_same_database() -> None:
 
 
 @pytest.mark.parametrize(
+    "database_url",
+    [
+        "postgresql+asyncpg://other_user:other-password@localhost:5432/mathrag_test",
+        "postgresql+asyncpg://test_user:other-password@localhost:5432/mathrag_test?sslmode=require",
+        "postgresql://test_user:other-password@localhost/mathrag_test",
+    ],
+)
+def test_rejects_same_physical_database_despite_connection_option_differences(
+    database_url: str,
+) -> None:
+    """用户名、非路由 query 与 PostgreSQL 默认端口都不得绕过同库保护。"""
+    with pytest.raises(RuntimeError, match="DATABASE_URL"):
+        require_test_database_url(TEST_DATABASE_URL, database_url)
+
+
+@pytest.mark.parametrize(
     "test_database_url",
     [
         "not a database url",
@@ -52,6 +68,18 @@ def test_rejects_invalid_or_database_less_url_without_revealing_secrets(
     message = str(error.value)
     assert "fake-password" not in message
     assert test_database_url not in message
+
+
+def test_rejects_invalid_test_port_without_revealing_url_or_password() -> None:
+    """延迟解析的无效端口也必须在破坏操作前失败。"""
+    invalid_url = "postgresql+asyncpg://test_user:fake-password@localhost:not-a-port/mathrag_test"
+
+    with pytest.raises(RuntimeError) as error:
+        require_test_database_url(invalid_url)
+
+    message = str(error.value)
+    assert "fake-password" not in message
+    assert invalid_url not in message
 
 
 def test_migration_guard_runs_before_any_alembic_downgrade(
