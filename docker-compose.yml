@@ -1,15 +1,45 @@
 services:
-  mathrag:
-    image: cloudby/mathrag:latest
-    container_name: mathrag-app
+  postgres:
+    image: pgvector/pgvector:0.8.5-pg18-bookworm
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mathrag}
+      POSTGRES_USER: ${POSTGRES_USER:-mathrag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mathrag-dev-only}
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./docker/postgres/init-test-db.sql:/docker-entrypoint-initdb.d/10-create-test-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mathrag -d mathrag"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  mathrag:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mathrag:local
     env_file:
       - .env
-    restart: unless-stopped
-    pull_policy: always
+    environment:
+      APP_ENV: production
+      APP_WORKERS: 1
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mathrag}:${POSTGRES_PASSWORD:-mathrag-dev-only}@postgres:5432/${POSTGRES_DB:-mathrag}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 1 -b 0.0.0.0:8000 --timeout 120
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
-      interval: 30s
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health/ready"]
+      interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 12
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
