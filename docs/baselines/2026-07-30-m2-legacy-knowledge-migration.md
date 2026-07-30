@@ -75,6 +75,7 @@ chunk metadata 的键集合为 `chunk_index,difficulty,has_example,has_steps,leg
 - `.\.venv\Scripts\python.exe -m pytest tests\integration\knowledge\test_import_rollback.py -q`：`1 passed in 0.62s`。
 - TDD 覆盖重点：schema migration 升降级往返、Repository 查询与载荷恢复、真实 PostgreSQL 中已 flush 首条后遇冲突的整批 rollback、UTF-8 loader/跨文件边界、CLI 双跑幂等和字段级无损。
 - 受保护 diff 以 `1882088d82eda83c4d77c2205292205314361c27`（`main` 基线）和实现提交 `15485ab7ba27603006cd4611106b768e47efb8f6` 为准，执行 `git diff --exit-code 1882088d82eda83c4d77c2205292205314361c27 15485ab7ba27603006cd4611106b768e47efb8f6 -- app/api/chat.py app/services/retriever.py data/raw/math_knowledge_seed.jsonl data/processed/kb_chunks.jsonl` 为空；两份 JSONL 的 `Get-FileHash` 与上表一致。
+- 当前交付可执行 `git diff --exit-code 1882088d82eda83c4d77c2205292205314361c27 HEAD -- app/api/chat.py app/services/retriever.py data/raw/math_knowledge_seed.jsonl data/processed/kb_chunks.jsonl` 复核相同受保护范围。`15485ab` 之后的变更仅为验收文档与测试数据库守卫，不修改受保护的实现或知识数据；本条不预先声明尚未创建的交付提交 SHA。
 
 ## 运行边界与回滚
 

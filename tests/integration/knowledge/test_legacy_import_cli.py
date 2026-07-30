@@ -12,12 +12,12 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import settings
 from app.modules.knowledge.errors import LegacyKnowledgeConflictError, LegacyKnowledgeInputError
 from app.modules.knowledge.schemas import LegacyImportSummary
+from tests.integration.database_safety import require_test_database_url
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -153,7 +153,7 @@ def test_legacy_import_cli_is_idempotent_and_lossless() -> None:
     test_database_url = os.getenv("TEST_DATABASE_URL")
     if not test_database_url:
         pytest.skip("未配置 TEST_DATABASE_URL")
-    assert make_url(test_database_url).database == "mathrag_test"
+    test_database_url = require_test_database_url(test_database_url, os.getenv("DATABASE_URL"))
 
     from app.infrastructure.database.session import dispose_engine
     from app.modules.knowledge.legacy_loader import load_legacy_bundles

@@ -13,6 +13,8 @@ import pytest
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from tests.integration.database_safety import require_test_database_url
+
 from app.modules.knowledge.models import KnowledgeChunk, KnowledgeItem
 from app.modules.knowledge.repository import KnowledgeRepository
 
@@ -132,6 +134,7 @@ def test_repository_reads_and_writes_legacy_items_without_owning_transactions() 
     database_url = os.getenv("TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("TEST_DATABASE_URL 未配置")
+    database_url = require_test_database_url(database_url, os.getenv("DATABASE_URL"))
 
     asyncio.run(exercise_repository(database_url))
 

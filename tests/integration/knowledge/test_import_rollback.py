@@ -20,6 +20,7 @@ from app.modules.knowledge.schemas import (
     LegacyKnowledgeItemInput,
 )
 from app.modules.knowledge.service import LegacyKnowledgeImportService
+from tests.integration.database_safety import require_test_database_url
 
 
 def make_bundle(legacy_id: str, retrieval_text: str | None = None) -> LegacyKnowledgeBundle:
@@ -140,5 +141,6 @@ def test_import_conflict_rolls_back_previously_flushed_insert() -> None:
     database_url = os.getenv("TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("TEST_DATABASE_URL 未配置")
+    database_url = require_test_database_url(database_url, os.getenv("DATABASE_URL"))
 
     asyncio.run(exercise_rollback(database_url))

@@ -9,6 +9,8 @@ from pathlib import Path
 import asyncpg
 import pytest
 
+from tests.integration.database_safety import require_test_database_url
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -40,6 +42,7 @@ def test_migration_upgrade_downgrade_upgrade_round_trip() -> None:
     database_url = os.getenv("TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("TEST_DATABASE_URL 未配置")
+    database_url = require_test_database_url(database_url, os.getenv("DATABASE_URL"))
 
     run_alembic(database_url, "downgrade", "base")
     assert asyncio.run(vector_extension_version(database_url)) is None

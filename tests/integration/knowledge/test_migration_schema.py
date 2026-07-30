@@ -14,6 +14,8 @@ from uuid import uuid4
 import asyncpg
 import pytest
 
+from tests.integration.database_safety import require_test_database_url
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 MIGRATION_PATH = PROJECT_ROOT / "alembic" / "versions" / "0002_create_knowledge_tables.py"
@@ -260,6 +262,7 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
     database_url = os.getenv("TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("TEST_DATABASE_URL 未配置")
+    database_url = require_test_database_url(database_url, os.getenv("DATABASE_URL"))
 
     try:
         run_alembic(database_url, "downgrade", "base")
