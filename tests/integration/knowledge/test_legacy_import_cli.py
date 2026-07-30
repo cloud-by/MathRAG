@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import settings
@@ -22,6 +23,7 @@ from app.modules.knowledge.schemas import LegacyImportSummary
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 RAW_SHA256 = "2593f45081b11ab4ae280d1a7fb107791b3099c364f3813f215a73fa7369d062"
 PROCESSED_SHA256 = "a0334a626d7e54ce04a447861af1616da26ad8b012d81f6720aa1d404539e5aa"
+COLLECTION_SHA256 = "82a76468c817454de1b87c825488db6b31e6778f9d058f9a8345d7c67590d4c5"
 
 
 def _summary() -> LegacyImportSummary:
@@ -91,11 +93,67 @@ def test_main_outputs_one_json_summary(monkeypatch: pytest.MonkeyPatch, capsys: 
     assert json.loads(captured.out) == _summary().model_dump(mode="json")
 
 
+def test_main_preserves_input_exit_code_when_engine_cleanup_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """业务输入错误传播期间，dispose 失败不得覆盖既有退出码。"""
+    import scripts.import_legacy_knowledge as command
+
+    def fail_loader(*args: object, **kwargs: object) -> list[object]:
+        raise LegacyKnowledgeInputError("raw.jsonl:1: invalid")
+
+    async def fail_dispose() -> None:
+        raise RuntimeError("dispose failed")
+
+    monkeypatch.setattr(command, "load_legacy_bundles", fail_loader)
+    monkeypatch.setattr(command, "dispose_engine", fail_dispose)
+
+    assert command.main() == 2
+    payload = json.loads(capsys.readouterr().err)
+    assert payload == {"detail": "raw.jsonl:1: invalid", "error": "invalid_input"}
+
+
+def test_run_import_propagates_engine_cleanup_failure_without_prior_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """没有业务异常时，dispose 失败必须正常传播，不能被静默吞掉。"""
+    import scripts.import_legacy_knowledge as command
+
+    class FakeSessionContext:
+        async def __aenter__(self) -> object:
+            return object()
+
+        async def __aexit__(self, *args: object) -> bool:
+            return False
+
+    class FakeService:
+        def __init__(self, *args: object) -> None:
+            pass
+
+        async def import_bundles(self, bundles: object) -> LegacyImportSummary:
+            return _summary()
+
+    def fake_factory() -> FakeSessionContext:
+        return FakeSessionContext()
+
+    async def fail_dispose() -> None:
+        raise RuntimeError("dispose failed")
+
+    monkeypatch.setattr(command, "load_legacy_bundles", lambda *args: [])
+    monkeypatch.setattr(command, "get_session_factory", lambda: fake_factory)
+    monkeypatch.setattr(command, "LegacyKnowledgeImportService", FakeService)
+    monkeypatch.setattr(command, "dispose_engine", fail_dispose)
+
+    with pytest.raises(RuntimeError, match="dispose failed"):
+        asyncio.run(command.run_import())
+
+
 def test_legacy_import_cli_is_idempotent_and_lossless() -> None:
     """在专用测试库中连续运行两次 CLI，验证幂等、状态与字段级无损。"""
     test_database_url = os.getenv("TEST_DATABASE_URL")
     if not test_database_url:
         pytest.skip("未配置 TEST_DATABASE_URL")
+    assert make_url(test_database_url).database == "mathrag_test"
 
     from app.infrastructure.database.session import dispose_engine
     from app.modules.knowledge.legacy_loader import load_legacy_bundles
@@ -110,6 +168,7 @@ def test_legacy_import_cli_is_idempotent_and_lossless() -> None:
         capture_output=True,
         text=True,
         encoding="utf-8",
+        timeout=60,
     )
     try:
         async def clear() -> None:
@@ -126,17 +185,21 @@ def test_legacy_import_cli_is_idempotent_and_lossless() -> None:
         before_raw = hashlib.sha256(settings.RAW_KB_PATH.read_bytes()).hexdigest()
         before_processed = hashlib.sha256(settings.PROCESSED_KB_PATH.read_bytes()).hexdigest()
         environment = {**os.environ, "DATABASE_URL": test_database_url}
-        first = subprocess.run([sys.executable, "-m", "scripts.import_legacy_knowledge"], cwd=PROJECT_ROOT, env=environment, capture_output=True, text=True, encoding="utf-8")
-        second = subprocess.run([sys.executable, "-m", "scripts.import_legacy_knowledge"], cwd=PROJECT_ROOT, env=environment, capture_output=True, text=True, encoding="utf-8")
+        first = subprocess.run([sys.executable, "-m", "scripts.import_legacy_knowledge"], cwd=PROJECT_ROOT, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=60)
+        second = subprocess.run([sys.executable, "-m", "scripts.import_legacy_knowledge"], cwd=PROJECT_ROOT, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=60)
 
         assert (first.returncode, second.returncode) == (0, 0)
         assert first.stderr == second.stderr == ""
         assert first.stdout.count("\n") == second.stdout.count("\n") == 1
         first_summary, second_summary = json.loads(first.stdout), json.loads(second.stdout)
-        assert (first_summary["created"], first_summary["skipped"], first_summary["conflicts"], first_summary["failed"]) == (26, 0, 0, 0)
-        assert (second_summary["created"], second_summary["skipped"], second_summary["conflicts"], second_summary["failed"]) == (0, 26, 0, 0)
-        assert all(summary["input_items"] == summary["input_chunks"] == 26 for summary in (first_summary, second_summary))
-        assert first_summary["input_sha256"] == first_summary["database_sha256"] == second_summary["input_sha256"] == second_summary["database_sha256"]
+        assert first_summary == {
+            "input_items": 26, "input_chunks": 26, "created": 26, "skipped": 0, "conflicts": 0, "failed": 0,
+            "database_items": 26, "database_chunks": 26, "input_sha256": COLLECTION_SHA256, "database_sha256": COLLECTION_SHA256,
+        }
+        assert second_summary == {
+            "input_items": 26, "input_chunks": 26, "created": 0, "skipped": 26, "conflicts": 0, "failed": 0,
+            "database_items": 26, "database_chunks": 26, "input_sha256": COLLECTION_SHA256, "database_sha256": COLLECTION_SHA256,
+        }
         assert before_raw == hashlib.sha256(settings.RAW_KB_PATH.read_bytes()).hexdigest()
         assert before_processed == hashlib.sha256(settings.PROCESSED_KB_PATH.read_bytes()).hexdigest()
         assert before_raw == RAW_SHA256
@@ -157,6 +220,7 @@ def test_legacy_import_cli_is_idempotent_and_lossless() -> None:
 
         asyncio.run(verify())
     finally:
+        original_exception_pending = sys.exc_info()[0] is not None
         async def cleanup() -> None:
             engine = create_async_engine(test_database_url)
             try:
@@ -167,5 +231,13 @@ def test_legacy_import_cli_is_idempotent_and_lossless() -> None:
             finally:
                 await engine.dispose()
 
-        asyncio.run(cleanup())
-        asyncio.run(dispose_engine())
+        try:
+            asyncio.run(cleanup())
+        except BaseException:
+            if not original_exception_pending:
+                raise
+        try:
+            asyncio.run(dispose_engine())
+        except BaseException:
+            if not original_exception_pending:
+                raise

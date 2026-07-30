@@ -28,34 +28,34 @@ def _validation_detail(error: ValidationError) -> str:
     return "; ".join(parts)
 
 
-def _decode_error_line(error: UnicodeError) -> int:
-    """尽力从 UTF-8 解码异常中恢复一基行号。"""
-    raw = getattr(error, "object", b"")
-    start = getattr(error, "start", 0)
-    if isinstance(raw, bytes):
-        return raw[:start].count(b"\n") + 1
-    return 1
-
-
 def _read_jsonl(path: Path, model_type: type[ModelT]) -> list[ModelT]:
-    """以 UTF-8 读取 JSONL，忽略空行并安全封装所有输入错误。"""
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except UnicodeError as exc:
-        raise LegacyKnowledgeInputError(f"{path}:{_decode_error_line(exc)}: UTF-8 解码失败") from exc
-    except OSError as exc:
-        raise LegacyKnowledgeInputError(f"{path}:1: 无法读取输入文件") from exc
-
+    """按物理 LF 边界读取 UTF-8 JSONL，避免切开字符串内的分隔符字符。"""
     records: list[ModelT] = []
-    for line_number, line in enumerate(lines, start=1):
-        if not line.strip():
-            continue
-        try:
-            records.append(model_type.model_validate_json(line))
-        except ValidationError as exc:
-            raise LegacyKnowledgeInputError(
-                f"{path}:{line_number}: {_validation_detail(exc)}"
-            ) from exc
+    line_number = 0
+    try:
+        with path.open("rb") as source:
+            for raw_line in source:
+                line_number += 1
+                if raw_line.endswith(b"\n"):
+                    raw_line = raw_line[:-1]
+                if raw_line.endswith(b"\r"):
+                    raw_line = raw_line[:-1]
+                if not raw_line.strip():
+                    continue
+                try:
+                    line = raw_line.decode("utf-8")
+                except UnicodeError as exc:
+                    raise LegacyKnowledgeInputError(
+                        f"{path}:{line_number}: UTF-8 解码失败"
+                    ) from exc
+                try:
+                    records.append(model_type.model_validate_json(line))
+                except ValidationError as exc:
+                    raise LegacyKnowledgeInputError(
+                        f"{path}:{line_number}: {_validation_detail(exc)}"
+                    ) from exc
+    except OSError as exc:
+        raise LegacyKnowledgeInputError(f"{path}:{max(line_number, 1)}: 无法读取输入文件") from exc
     return records
 
 
@@ -69,18 +69,15 @@ def _normalize_processed_steps(
 ) -> list[str]:
     """仅兼容历史构建器为每个步骤添加的一次显示序号前缀。"""
     if raw_steps == processed_steps:
-        return processed_steps
+        return list(raw_steps)
     if len(raw_steps) != len(processed_steps):
         raise LegacyKnowledgeInputError(f"legacy_id={legacy_id}: 处理后 steps 数量与原始记录不一致")
 
-    normalized: list[str] = []
-    for position, step in enumerate(processed_steps, start=1):
-        prefixes = (f"步骤{position}：", f"步骤{position}:")
-        prefix = next((candidate for candidate in prefixes if step.startswith(candidate)), None)
-        normalized.append(step[len(prefix):] if prefix is not None else step)
-    if normalized != raw_steps:
-        raise LegacyKnowledgeInputError(f"legacy_id={legacy_id}: 处理后 steps 与原始记录不一致")
-    return raw_steps
+    for position, (raw_step, processed_step) in enumerate(zip(raw_steps, processed_steps), start=1):
+        prefix = f"步骤{position}："
+        if not processed_step.startswith(prefix) or processed_step[len(prefix):] != raw_step:
+            raise LegacyKnowledgeInputError(f"legacy_id={legacy_id}: 处理后 steps 与原始记录不一致")
+    return list(raw_steps)
 
 
 def _bundle_or_input_error(
@@ -91,7 +88,7 @@ def _bundle_or_input_error(
 ) -> LegacyKnowledgeBundle:
     """构造跨文件 bundle，并将验证失败隔离为安全输入错误。"""
     normalized_steps = _normalize_processed_steps(item.steps, chunk.steps, item.id)
-    bundle_chunk = chunk.model_copy(update={"steps": normalized_steps})
+    bundle_chunk = chunk.model_copy(update={"steps": list(normalized_steps)})
     try:
         return LegacyKnowledgeBundle(item=item, chunk=bundle_chunk, chunk_index=0)
     except ValidationError as exc:

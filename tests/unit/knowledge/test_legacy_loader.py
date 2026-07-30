@@ -65,6 +65,22 @@ def test_load_legacy_bundles_accepts_valid_pairs_and_ignores_blank_lines(tmp_pat
     assert len(collection_sha256(bundles)) == 64
 
 
+def test_jsonl_reader_preserves_u2028_and_u2029_inside_one_physical_line(tmp_path: Path) -> None:
+    """合法 JSON 字符串内的行分隔符不能被当作 JSONL 物理行边界。"""
+    from app.modules.knowledge.legacy_loader import load_legacy_bundles
+
+    raw_path = tmp_path / "raw.jsonl"
+    chunk_path = tmp_path / "chunks.jsonl"
+    content = "甲\u2028乙\u2029丙"
+    raw_path.write_text(json.dumps(_item(content=content), ensure_ascii=False) + "\n", encoding="utf-8")
+    chunk_path.write_text(json.dumps(_chunk(content=content), ensure_ascii=False) + "\n", encoding="utf-8")
+
+    bundles = load_legacy_bundles(raw_path, chunk_path)
+
+    assert len(bundles) == 1
+    assert bundles[0].item.content == bundles[0].chunk.content == content
+
+
 def test_bad_json_reports_path_and_line_without_raw_content(tmp_path: Path) -> None:
     """坏 JSON 的诊断包含定位但绝不回显原始知识正文。"""
     from app.modules.knowledge.legacy_loader import load_legacy_bundles
@@ -181,7 +197,7 @@ def test_processed_step_prefixes_are_normalized_only_in_memory(tmp_path: Path) -
     raw_path = tmp_path / "raw.jsonl"
     chunk_path = tmp_path / "chunks.jsonl"
     _write_jsonl(raw_path, _item(steps=["移项", "求解"]))
-    _write_jsonl(chunk_path, _chunk(steps=["步骤1：移项", "步骤2:求解"]))
+    _write_jsonl(chunk_path, _chunk(steps=["步骤1：移项", "步骤2：求解"]))
 
     bundles = load_legacy_bundles(raw_path, chunk_path)
 
@@ -199,6 +215,28 @@ def test_equal_steps_without_prefix_remain_valid(tmp_path: Path) -> None:
     _write_jsonl(chunk_path, _chunk())
 
     assert load_legacy_bundles(raw_path, chunk_path)[0].item.id == "k0001"
+
+
+@pytest.mark.parametrize(
+    "processed_steps",
+    [
+        ["步骤1：移项", "步骤2:求解"],
+        ["步骤1：移项", "求解"],
+    ],
+)
+def test_step_prefix_normalization_rejects_halfwidth_and_mixed_modes(
+    tmp_path: Path, processed_steps: list[str]
+) -> None:
+    """steps 只能整体相同或整体使用严格全角历史前缀。"""
+    from app.modules.knowledge.legacy_loader import load_legacy_bundles
+
+    raw_path = tmp_path / "raw.jsonl"
+    chunk_path = tmp_path / "chunks.jsonl"
+    _write_jsonl(raw_path, _item(steps=["移项", "求解"]))
+    _write_jsonl(chunk_path, _chunk(steps=processed_steps))
+
+    with pytest.raises(LegacyKnowledgeInputError, match="legacy_id=k0001"):
+        load_legacy_bundles(raw_path, chunk_path)
 
 
 def test_step_prefix_normalization_rejects_remaining_difference(tmp_path: Path) -> None:
@@ -240,6 +278,28 @@ def test_step_prefix_normalization_rejects_noncanonical_prefixes(
         load_legacy_bundles(raw_path, chunk_path)
 
 
+@pytest.mark.parametrize(
+    "processed_steps",
+    [
+        ["移项", "求解"],
+        ["步骤1：移项", "步骤2：求解"],
+    ],
+)
+def test_step_normalization_returns_an_isolated_raw_steps_copy(processed_steps: list[str]) -> None:
+    """无论哪种允许模式，规范化结果都不与任一输入共享容器。"""
+    from app.modules.knowledge.legacy_loader import _normalize_processed_steps
+
+    raw_steps = ["移项", "求解"]
+    normalized = _normalize_processed_steps(raw_steps, processed_steps, "k0001")
+
+    assert normalized == raw_steps
+    assert normalized is not raw_steps
+    assert normalized is not processed_steps
+    normalized.append("仅修改副本")
+    assert raw_steps == ["移项", "求解"]
+    assert processed_steps == (["移项", "求解"] if processed_steps == raw_steps else ["步骤1：移项", "步骤2：求解"])
+
+
 def test_real_legacy_files_load_26_sorted_bundles() -> None:
     """仓库内现存 UTF-8 JSONL 可无损加载为 26 条有序 bundle。"""
     from app.core.config import settings
@@ -249,6 +309,7 @@ def test_real_legacy_files_load_26_sorted_bundles() -> None:
 
     assert len(bundles) == 26
     assert [bundle.item.id for bundle in bundles] == sorted(bundle.item.id for bundle in bundles)
+    assert all(bundle.item.steps is not bundle.chunk.steps for bundle in bundles)
     assert len(collection_sha256(bundles)) == 64
 
 

@@ -23,7 +23,12 @@ async def run_import() -> LegacyImportSummary:
             repository = KnowledgeRepository(session)
             return await LegacyKnowledgeImportService(session, repository).import_bundles(bundles)
     finally:
-        await dispose_engine()
+        original_exception_pending = sys.exc_info()[0] is not None
+        try:
+            await dispose_engine()
+        except BaseException:
+            if not original_exception_pending:
+                raise
 
 
 def _write_error(error: str, detail: str) -> None:
