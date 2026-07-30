@@ -63,13 +63,14 @@ def test_env_example_contains_runtime_settings_and_only_fake_secrets() -> None:
         assert values[name].lower() in {"", "sk-xxxx", "xxxx", "changeme"}
 
 
-def test_readme_distinguishes_remote_compose_and_local_image_commands() -> None:
+def test_readme_documents_local_compose_database_workflow() -> None:
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     docker_section = readme.split("## Docker 部署", maxsplit=1)[1].split("\n---", maxsplit=1)[0]
 
-    assert "cloudby/mathrag:latest" in docker_section
-    assert "docker compose up -d --build" not in docker_section
-    assert "docker compose pull" in docker_section
-    assert "docker build -t mathrag:local ." in docker_section
-    assert "docker run" in docker_section
+    assert "cloudby/mathrag:latest" not in docker_section
+    assert "docker compose up -d postgres" in docker_section
+    assert ".\\.venv\\Scripts\\alembic.exe upgrade head" in docker_section
+    assert "docker compose up -d --build mathrag" in docker_section
     assert "mathrag:local" in docker_section
+    assert "/health/live" in docker_section
+    assert "/health/ready" in docker_section

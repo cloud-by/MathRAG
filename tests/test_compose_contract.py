@@ -8,6 +8,13 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_dockerfile_pins_python_runtime() -> None:
+    dockerfile = (PROJECT_ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    assert dockerfile.startswith("FROM python:3.11.9-slim\n")
+    assert "pip install --no-cache-dir -r requirements.lock.txt" in dockerfile
+
+
 def test_compose_uses_local_app_and_pinned_pgvector() -> None:
     compose = yaml.safe_load(
         (PROJECT_ROOT / "docker-compose.yml").read_text(encoding="utf-8")

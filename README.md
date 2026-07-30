@@ -607,45 +607,54 @@ app/frontend/app.js
 
 ## Docker 部署
 
-### 使用远端镜像
+### 本地数据库开发
 
-`docker-compose.yml` 仅声明远端镜像 `cloudby/mathrag:latest`，并设置了 `pull_policy: always`；它不会使用仓库中的 `Dockerfile` 构建本地源码。
+```powershell
+Copy-Item .env.example .env
+docker compose up -d postgres
+.\.venv\Scripts\alembic.exe upgrade head
+.\.venv\Scripts\python.exe run.py
+```
 
-拉取远端镜像并启动：
+健康检查：
 
-```bash
-docker compose pull
-docker compose up -d
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/health/live
+Invoke-RestMethod http://127.0.0.1:8000/health/ready
+```
+
+`/health/live` 只检查应用进程；`/health/ready` 同时检查数据库、关键配置和 pgvector 扩展。
+
+### 完整 Compose 启动
+
+`docker-compose.yml` 会从当前工作区构建 `mathrag:local`，并启动固定版本的 PostgreSQL/pgvector。首次创建数据库卷时，先执行迁移，再启动应用：
+
+```powershell
+Copy-Item .env.example .env
+docker compose up -d postgres
+.\.venv\Scripts\alembic.exe upgrade head
+docker compose up -d --build mathrag
+docker compose ps
 ```
 
 查看日志：
 
 ```bash
-docker compose logs -f mathrag
+docker compose logs -f mathrag postgres
 ```
 
-停止：
+服务只绑定本机回环地址：
+
+```text
+127.0.0.1:8000 -> container:8000
+127.0.0.1:5432 -> container:5432
+```
+
+停止服务：
 
 ```bash
 docker compose down
 ```
-
-### 使用当前源码构建本地镜像
-
-需要运行当前工作区源码时，直接使用 `Dockerfile` 构建本地镜像，再通过 `docker run` 启动：
-
-```bash
-docker build -t mathrag:local .
-docker run -d --name mathrag-local --env-file .env -p 127.0.0.1:8000:8000 mathrag:local
-```
-
-默认端口映射：
-
-```text
-127.0.0.1:8000 -> container:8000
-```
-
-两种启动方式都使用 `.env` 注入环境变量；本地镜像方式可用 `docker logs -f mathrag-local` 查看日志。
 
 ---
 
