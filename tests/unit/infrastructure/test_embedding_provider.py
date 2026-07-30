@@ -234,6 +234,74 @@ def test_embedding_property_failure_is_safely_mapped() -> None:
     assert sensitive not in str(raised.value)
 
 
+def test_response_data_domain_error_from_untrusted_property_is_sanitized() -> None:
+    """外部 response.data 即使抛领域异常也必须视为不可信诊断。"""
+    sensitive = "raw-response-body sk-secret https://private.example/v1"
+
+    class UnsafeResponse:
+        @property
+        def data(self) -> list[FakeEmbedding]:
+            raise EmbeddingResponseError(sensitive)
+
+    class UnsafeEmbeddingsAPI:
+        async def create(self, **_kwargs: Any) -> UnsafeResponse:
+            return UnsafeResponse()
+
+    provider = OpenAIEmbeddingProvider(
+        client=SimpleNamespace(embeddings=UnsafeEmbeddingsAPI()),
+        model="embedding-test",
+    )
+
+    with pytest.raises(EmbeddingResponseError) as raised:
+        asyncio.run(provider.embed_texts(["不要泄露的输入正文"]))
+
+    assert sensitive not in str(raised.value)
+
+
+def test_index_domain_error_from_untrusted_property_is_sanitized() -> None:
+    """外部 item.index 抛出的领域异常不得越过响应信任边界。"""
+    sensitive = "raw-response-body sk-secret https://private.example/v1"
+
+    class UnsafeIndexEmbedding:
+        @property
+        def index(self) -> int:
+            raise EmbeddingResponseError(sensitive)
+
+        embedding = _axis_vector(0)
+
+    provider = OpenAIEmbeddingProvider(
+        client=FakeAsyncOpenAI([UnsafeIndexEmbedding()]),
+        model="embedding-test",
+    )
+
+    with pytest.raises(EmbeddingResponseError) as raised:
+        asyncio.run(provider.embed_texts(["不要泄露的输入正文"]))
+
+    assert sensitive not in str(raised.value)
+
+
+def test_embedding_domain_error_from_untrusted_property_is_sanitized() -> None:
+    """外部 item.embedding 抛出的领域异常不得伪装成内部安全错误。"""
+    sensitive = "raw-response-body sk-secret https://private.example/v1"
+
+    class UnsafeEmbedding:
+        index = 0
+
+        @property
+        def embedding(self) -> list[float]:
+            raise EmbeddingResponseError(sensitive)
+
+    provider = OpenAIEmbeddingProvider(
+        client=FakeAsyncOpenAI([UnsafeEmbedding()]),
+        model="embedding-test",
+    )
+
+    with pytest.raises(EmbeddingResponseError) as raised:
+        asyncio.run(provider.embed_texts(["不要泄露的输入正文"]))
+
+    assert sensitive not in str(raised.value)
+
+
 def test_provider_normalizes_large_finite_vectors_without_overflow() -> None:
     """有限且非零的超大分量仍应得到有效的单位向量。"""
     client = FakeAsyncOpenAI(
@@ -365,6 +433,36 @@ def test_default_constructor_builds_client_from_embedding_settings(monkeypatch) 
     ]
 
 
+def test_falsey_injected_client_is_used_instead_of_default_client(monkeypatch) -> None:
+    """合法但 falsey 的注入客户端不得被默认客户端替换。"""
+    from app.infrastructure.embedding import provider as provider_module
+
+    class FalseyAsyncOpenAI(FakeAsyncOpenAI):
+        def __bool__(self) -> bool:
+            return False
+
+    injected = FalseyAsyncOpenAI([FakeEmbedding(0, _axis_vector(0))])
+    fallback = FakeAsyncOpenAI([FakeEmbedding(0, _axis_vector(1))])
+    default_calls: list[dict[str, Any]] = []
+
+    def fake_async_openai(**kwargs: Any) -> FakeAsyncOpenAI:
+        default_calls.append(kwargs)
+        return fallback
+
+    monkeypatch.setattr(provider_module, "AsyncOpenAI", fake_async_openai)
+
+    provider = provider_module.OpenAIEmbeddingProvider(
+        client=injected,
+        model="embedding-test",
+    )
+    result = asyncio.run(provider.embed_texts(["使用注入客户端"]))
+
+    assert result[0][0] == pytest.approx(1.0)
+    assert default_calls == []
+    assert len(injected.embeddings.calls) == 1
+    assert fallback.embeddings.calls == []
+
+
 def test_aclose_closes_injected_sdk_client() -> None:
     """Provider 释放其持有的 SDK 连接池。"""
     client = FakeAsyncOpenAI([])
@@ -442,6 +540,39 @@ def test_app_lifespan_disposes_provider_and_database_on_failure(monkeypatch) -> 
             async with main.lifespan(main.app):
                 events.append("body")
                 raise RuntimeError("boom")
+
+    asyncio.run(exercise())
+
+    assert events == ["validate", "body", "embedding", "database"]
+
+
+def test_app_lifespan_disposes_database_when_provider_dispose_fails(
+    monkeypatch,
+) -> None:
+    """Provider 释放失败时嵌套 finally 仍必须释放数据库。"""
+    from app import main
+
+    events: list[str] = []
+
+    async def dispose_provider() -> None:
+        events.append("embedding")
+        raise RuntimeError("embedding dispose failed")
+
+    async def dispose_database() -> None:
+        events.append("database")
+
+    monkeypatch.setattr(
+        main,
+        "settings",
+        SimpleNamespace(validate_runtime=lambda: events.append("validate")),
+    )
+    monkeypatch.setattr(main, "dispose_embedding_provider", dispose_provider)
+    monkeypatch.setattr(main, "dispose_engine", dispose_database)
+
+    async def exercise() -> None:
+        with pytest.raises(RuntimeError, match="embedding dispose failed"):
+            async with main.lifespan(main.app):
+                events.append("body")
 
     asyncio.run(exercise())
 

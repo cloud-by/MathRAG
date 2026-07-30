@@ -87,10 +87,14 @@ class OpenAIEmbeddingProvider:
         self._model = model.strip()
         self._dimensions = dimensions
         self._batch_size = batch_size
-        self._client = client or AsyncOpenAI(
-            api_key=settings.EMBEDDING_API_KEY,
-            base_url=settings.EMBEDDING_BASE_URL,
-            timeout=settings.EMBEDDING_TIMEOUT,
+        self._client = (
+            client
+            if client is not None
+            else AsyncOpenAI(
+                api_key=settings.EMBEDDING_API_KEY,
+                base_url=settings.EMBEDDING_BASE_URL,
+                timeout=settings.EMBEDDING_TIMEOUT,
+            )
         )
 
     @property
@@ -129,8 +133,6 @@ class OpenAIEmbeddingProvider:
 
             try:
                 data = list(response.data)
-            except EmbeddingResponseError:
-                raise
             except Exception:
                 raise EmbeddingResponseError("Embedding 返回结构无效") from None
             if len(data) != len(batch):
@@ -138,8 +140,6 @@ class OpenAIEmbeddingProvider:
 
             try:
                 indexed = [(item.index, item) for item in data]
-            except EmbeddingResponseError:
-                raise
             except Exception:
                 raise EmbeddingResponseError("Embedding 返回索引无效") from None
             indexes = [index for index, _item in indexed]
@@ -152,8 +152,14 @@ class OpenAIEmbeddingProvider:
 
             for _index, item in indexed:
                 try:
+                    embedding = item.embedding
+                except Exception:
+                    raise EmbeddingResponseError(
+                        "Embedding 返回向量无效"
+                    ) from None
+                try:
                     vector = validate_and_normalize_vector(
-                        item.embedding, self._dimensions
+                        embedding, self._dimensions
                     )
                 except EmbeddingResponseError:
                     raise
