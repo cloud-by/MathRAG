@@ -266,12 +266,35 @@ async def verify_database_constraints(database_url: str) -> None:
             item_id,
         )
         vector = "[" + ",".join(["0"] * 1024) + "]"
+        await assert_check_violation(
+            connection,
+            """
+            INSERT INTO knowledge_chunks
+                (id, knowledge_item_id, chunk_index, retrieval_text, answer_context,
+                 embedding, status)
+            VALUES ($1, $2, 3, '缺少向量模型的就绪分块', '回答上下文', $3::vector, 'ready')
+            """,
+            uuid4(),
+            item_id,
+            vector,
+        )
+        await assert_check_violation(
+            connection,
+            """
+            INSERT INTO knowledge_chunks
+                (id, knowledge_item_id, chunk_index, retrieval_text, answer_context,
+                 embedding_model, status)
+            VALUES ($1, $2, 4, '缺少向量的就绪分块', '回答上下文', 'embedding-test', 'ready')
+            """,
+            uuid4(),
+            item_id,
+        )
         await connection.execute(
             """
             INSERT INTO knowledge_chunks
                 (id, knowledge_item_id, chunk_index, retrieval_text, answer_context,
                  embedding, embedding_model, status)
-            VALUES ($1, $2, 3, '合法就绪分块', '回答上下文', $3::vector, 'test-model', 'ready')
+            VALUES ($1, $2, 5, '合法就绪分块', '回答上下文', $3::vector, 'test-model', 'ready')
             """,
             uuid4(),
             item_id,
@@ -281,7 +304,7 @@ async def verify_database_constraints(database_url: str) -> None:
             """
             INSERT INTO knowledge_chunks
                 (id, knowledge_item_id, chunk_index, retrieval_text, answer_context, status)
-            VALUES ($1, $2, 4, '待处理分块', '回答上下文', 'pending')
+            VALUES ($1, $2, 6, '待处理分块', '回答上下文', 'pending')
             """,
             uuid4(),
             item_id,
