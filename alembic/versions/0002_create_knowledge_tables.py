@@ -9,8 +9,6 @@ from alembic import op
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects import postgresql
 
-from app.infrastructure.database.types import UTCDateTime
-
 
 revision: str = "0002_create_knowledge_tables"
 down_revision: str | None = "0001_enable_vector_extension"
@@ -54,12 +52,11 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("revision", sa.Integer(), server_default=sa.text("1"), nullable=False),
-        sa.Column("created_at", UTCDateTime(), server_default=sa.func.now(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.Column(
             "updated_at",
-            UTCDateTime(),
+            sa.DateTime(timezone=True),
             server_default=sa.func.now(),
-            onupdate=sa.func.now(),
             nullable=False,
         ),
         sa.CheckConstraint(
@@ -102,7 +99,7 @@ def upgrade() -> None:
             server_default=sa.text("'pending'"),
             nullable=False,
         ),
-        sa.Column("created_at", UTCDateTime(), server_default=sa.func.now(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         sa.CheckConstraint(
             "chunk_index >= 0",
             name=sa.schema.conv("ck_knowledge_chunks_chunk_index"),

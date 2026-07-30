@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import get_type_hints
+
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import CheckConstraint, ForeignKeyConstraint, UniqueConstraint, inspect
+from sqlalchemy.orm import Mapped
 
 from app.modules.knowledge.models import KnowledgeChunk, KnowledgeItem
 
@@ -72,3 +76,13 @@ def test_knowledge_item_and_chunk_relationships_use_orphan_cascade() -> None:
     assert item_relationship.cascade.delete_orphan is True
     assert item_relationship.passive_deletes is True
     assert chunk_relationship.back_populates == "chunks"
+
+
+def test_timestamp_attributes_are_typed_as_datetime() -> None:
+    """时间列的 ORM 类型契约应明确表达 datetime。"""
+    item_hints = get_type_hints(KnowledgeItem)
+    chunk_hints = get_type_hints(KnowledgeChunk)
+
+    assert item_hints["created_at"] == Mapped[datetime]
+    assert item_hints["updated_at"] == Mapped[datetime]
+    assert chunk_hints["created_at"] == Mapped[datetime]
