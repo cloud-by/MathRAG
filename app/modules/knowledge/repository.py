@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.modules.knowledge.errors import KnowledgeSearchError
+from app.modules.knowledge.errors import EmbeddingInputError, KnowledgeSearchError
 from app.modules.knowledge.models import KnowledgeChunk, KnowledgeItem
 from app.modules.knowledge.search import KnowledgeSearchHit, search_hit_from_row
 
@@ -88,6 +88,7 @@ class KnowledgeRepository:
                 KnowledgeItem.visibility == "public",
                 KnowledgeChunk.status == "ready",
                 KnowledgeChunk.embedding.is_not(None),
+                func.vector_norm(KnowledgeChunk.embedding) > 0,
                 KnowledgeChunk.embedding_model == current_model,
             )
             .order_by(distance.asc(), KnowledgeChunk.id.asc())
@@ -110,4 +111,6 @@ def _validated_query_vector(query_vector: Sequence[float]) -> list[float]:
         raise KnowledgeSearchError("query_vector 必须是 1024 维有限向量") from None
     if len(vector) != 1024 or not all(math.isfinite(value) for value in vector):
         raise KnowledgeSearchError("query_vector 必须是 1024 维有限向量")
+    if not any(value != 0.0 for value in vector):
+        raise EmbeddingInputError("query_vector 不能是零向量")
     return vector

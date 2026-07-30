@@ -121,6 +121,28 @@ def test_hit_copies_metadata_and_builds_legacy_reference() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("distance", "expected"),
+    [(0.0, 0.0), (2.0, 2.0), (-1e-12, 0.0), (2.0 + 1e-12, 2.0)],
+)
+def test_hit_clamps_distance_boundary_with_small_database_error(
+    distance: float,
+    expected: float,
+) -> None:
+    """余弦距离接受闭区间端点，并吸收数据库级微小浮点误差。"""
+    assert make_hit(distance=distance).distance == expected
+
+
+@pytest.mark.parametrize("distance", [-1e-6, 2.0 + 1e-6])
+def test_hit_rejects_distance_boundary_violation_safely(distance: float) -> None:
+    """明显越过余弦距离范围的命中必须携带 UUID 安全失败。"""
+    with pytest.raises(KnowledgeSearchError) as captured:
+        make_hit(distance=distance)
+
+    assert str(CHUNK_A) in str(captured.value)
+    assert str(distance) not in str(captured.value)
+
+
 @pytest.mark.parametrize("rank", [0, -1, True, 1.5, "1"])
 def test_to_reference_rejects_invalid_rank(rank: object) -> None:
     """引用排名必须是从 1 开始的真整数。"""
@@ -222,6 +244,26 @@ def test_search_hit_from_row_rejects_conflicting_legacy_source_identity_safely()
     assert "example.invalid" not in message
 
 
+@pytest.mark.parametrize("legacy_id", [None, "", "   "])
+def test_search_hit_from_row_requires_nonempty_canonical_model_legacy_id(
+    legacy_id: object,
+) -> None:
+    """M3 legacy 行必须由非空且无首尾空白的模型 legacy_id 证明身份。"""
+    chunk, item, distance = make_row()
+    item.legacy_id = legacy_id  # type: ignore[assignment]
+    item.content = "https://example.invalid/private?token=secret"
+    chunk.metadata_["secret"] = "metadata-secret"
+
+    with pytest.raises(KnowledgeSearchError) as captured:
+        search_hit_from_row(chunk, item, distance)
+
+    message = str(captured.value)
+    assert str(CHUNK_A) in message
+    assert "source-from-metadata" not in message
+    assert "metadata-secret" not in message
+    assert "example.invalid" not in message
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -279,6 +321,23 @@ class NoExecuteSession:
         raise AssertionError("无效输入不应执行 SQL")
 
 
+def test_repository_rejects_zero_query_vector_before_sql() -> None:
+    """全零查询向量没有余弦方向，必须在构造 SQL 前以 ValueError 拒绝。"""
+    session = NoExecuteSession()
+    repository = KnowledgeRepository(session)  # type: ignore[arg-type]
+
+    async def exercise() -> None:
+        with pytest.raises(ValueError):
+            await repository.search_ready_chunks(
+                query_vector=[0.0] * 1024,
+                embedding_model="embedding-test",
+                limit=1,
+            )
+
+    asyncio.run(exercise())
+    assert session.execute_called is False
+
+
 @pytest.mark.parametrize(
     ("query_vector", "embedding_model", "limit"),
     [
@@ -286,11 +345,11 @@ class NoExecuteSession:
         ([0.0] * 1025, "embedding-test", 1),
         ([0.0] * 1023 + [math.nan], "embedding-test", 1),
         ([0.0] * 1023 + [math.inf], "embedding-test", 1),
-        ([0.0] * 1024, "", 1),
-        ([0.0] * 1024, "   ", 1),
-        ([0.0] * 1024, "embedding-test", 0),
-        ([0.0] * 1024, "embedding-test", 11),
-        ([0.0] * 1024, "embedding-test", True),
+        ([1.0, *([0.0] * 1023)], "", 1),
+        ([1.0, *([0.0] * 1023)], "   ", 1),
+        ([1.0, *([0.0] * 1023)], "embedding-test", 0),
+        ([1.0, *([0.0] * 1023)], "embedding-test", 11),
+        ([1.0, *([0.0] * 1023)], "embedding-test", True),
     ],
 )
 def test_repository_rejects_unsafe_search_inputs_before_sql(

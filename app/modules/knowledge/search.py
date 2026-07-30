@@ -12,6 +12,9 @@ from app.modules.knowledge.errors import KnowledgeSearchError
 from app.modules.knowledge.models import KnowledgeChunk, KnowledgeItem
 
 
+DISTANCE_EPSILON = 1e-9
+
+
 @dataclass(frozen=True)
 class KnowledgeSearchHit:
     """不依赖 ORM 会话生命周期的单条知识检索结果。"""
@@ -56,13 +59,11 @@ class KnowledgeSearchHit:
         if type(self.legacy_source_id) is not str or not self.legacy_source_id:
             raise _row_error(chunk_id, "legacy_source_id 无效")
 
+        distance = _validated_distance(self.distance, chunk_id)
         try:
-            distance = float(self.distance)
             metadata = deepcopy(self.metadata)
         except Exception:
-            raise _row_error(chunk_id, "结果载荷无法复制或转换") from None
-        if not math.isfinite(distance):
-            raise _row_error(chunk_id, "distance 必须是有限数值")
+            raise _row_error(chunk_id, "metadata 无法复制") from None
         object.__setattr__(self, "distance", distance)
         object.__setattr__(self, "metadata", metadata)
 
@@ -133,12 +134,7 @@ def search_hit_from_row(
     if not isinstance(chunk_id, UUID):
         raise KnowledgeSearchError("知识检索行缺少有效的数据库分块 UUID")
 
-    try:
-        numeric_distance = float(distance)
-    except Exception:
-        raise _row_error(chunk_id, "distance 无法转换") from None
-    if not math.isfinite(numeric_distance):
-        raise _row_error(chunk_id, "distance 必须是有限数值")
+    numeric_distance = _validated_distance(distance, chunk_id)
 
     metadata_value = getattr(chunk, "metadata_", None)
     if type(metadata_value) is not dict:
@@ -157,9 +153,13 @@ def search_hit_from_row(
         raise _row_error(chunk_id, "legacy_source_id 无效")
 
     model_source_id = getattr(item, "legacy_id", None)
-    if model_source_id is not None and type(model_source_id) is not str:
+    if (
+        type(model_source_id) is not str
+        or not model_source_id
+        or model_source_id != model_source_id.strip()
+    ):
         raise _row_error(chunk_id, "模型 legacy_id 无效")
-    if model_source_id and model_source_id != metadata_source_id:
+    if model_source_id != metadata_source_id:
         raise _row_error(chunk_id, "legacy_source_id 与模型 legacy_id 不一致")
 
     keywords = _string_list_from_model(
@@ -204,6 +204,19 @@ def _string_list_from_model(
     if type(value) is not list or not all(type(entry) is str for entry in value):
         raise _row_error(chunk_id, f"{field_name} 类型无效")
     return tuple(value)
+
+
+def _validated_distance(value: object, chunk_id: UUID) -> float:
+    """校验余弦距离范围，并吸收数据库计算产生的微小边界误差。"""
+    try:
+        distance = float(value)
+    except Exception:
+        raise _row_error(chunk_id, "distance 无法转换") from None
+    if not math.isfinite(distance):
+        raise _row_error(chunk_id, "distance 必须是有限数值")
+    if distance < -DISTANCE_EPSILON or distance > 2.0 + DISTANCE_EPSILON:
+        raise _row_error(chunk_id, "distance 超出余弦距离范围")
+    return min(2.0, max(0.0, distance))
 
 
 def _string_from_model(model: object, field_name: str, chunk_id: UUID) -> str:

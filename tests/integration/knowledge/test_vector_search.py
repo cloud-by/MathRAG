@@ -143,6 +143,11 @@ async def exercise_vector_search(database_url: str) -> None:
                 embedding=query,
                 embedding_model="wrong-model",
             ),
+            make_item_with_chunk(
+                number=6,
+                legacy_id="zero-vector-ready",
+                embedding=vector(0.0),
+            ),
         ]
 
         async with session_factory() as session:
