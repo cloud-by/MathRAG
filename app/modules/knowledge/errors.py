@@ -1,6 +1,22 @@
 """旧知识迁移的领域异常。"""
 
 
+class KnowledgeSearchError(Exception):
+    """知识向量化或检索失败。"""
+
+
+class EmbeddingInputError(KnowledgeSearchError, ValueError):
+    """待向量化文本或配置不满足固定契约。"""
+
+
+class EmbeddingResponseError(KnowledgeSearchError):
+    """Embedding Provider 返回无效结果。"""
+
+
+class EmbeddingUnavailableError(KnowledgeSearchError):
+    """Embedding Provider 暂时不可用。"""
+
+
 class LegacyKnowledgeImportError(Exception):
     """旧知识导入过程中发生的基础异常。"""
 

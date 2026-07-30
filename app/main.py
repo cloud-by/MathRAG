@@ -13,15 +13,21 @@ from app.api.knowledge import router as knowledge_router
 from app.core.config import settings
 from app.core.middleware import RequestIdMiddleware
 from app.infrastructure.database.session import dispose_engine
+from app.infrastructure.embedding.provider import dispose_embedding_provider
 from app.modules.system.router import router as system_router
 from app.schemas.chat import HealthResponse
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings.validate_runtime()
-    yield
-    await dispose_engine()
+    try:
+        settings.validate_runtime()
+        yield
+    finally:
+        try:
+            await dispose_embedding_provider()
+        finally:
+            await dispose_engine()
 
 
 def create_app() -> FastAPI:
