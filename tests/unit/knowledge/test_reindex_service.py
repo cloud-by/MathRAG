@@ -11,6 +11,7 @@ import pytest
 
 import app.modules.knowledge.reindex_service as reindex_module
 from app.modules.knowledge.errors import (
+    EmbeddingInputError,
     EmbeddingResponseError,
     EmbeddingUnavailableError,
     KnowledgeSearchError,
@@ -268,6 +269,36 @@ def test_candidate_query_uses_only_the_three_planned_reindex_conditions() -> Non
     assert "vector_norm" not in sql
 
 
+def test_repository_embedding_model_accepts_128_and_safely_rejects_longer() -> None:
+    """Repository 必须在 SQL 前守住 embedding_model 列宽。"""
+
+    class EmptyResult:
+        def all(self) -> list[object]:
+            return []
+
+    class CountingSession:
+        def __init__(self) -> None:
+            self.execute_calls = 0
+
+        async def execute(self, statement: object) -> EmptyResult:
+            del statement
+            self.execute_calls += 1
+            return EmptyResult()
+
+    session = CountingSession()
+    repository = KnowledgeRepository(session)  # type: ignore[arg-type]
+    assert asyncio.run(repository.list_reindex_candidates("m" * 128)) == []
+    assert session.execute_calls == 1
+
+    oversized_model = "  " + ("s" * 129) + "  "
+    with pytest.raises(KnowledgeSearchError) as captured:
+        asyncio.run(repository.list_reindex_candidates(oversized_model))
+
+    assert "128" in str(captured.value)
+    assert oversized_model.strip() not in str(captured.value)
+    assert session.execute_calls == 1
+
+
 @pytest.mark.parametrize(
     "method_name",
     ["mark_candidates_indexing", "mark_chunks_failed"],
@@ -450,7 +481,66 @@ def test_response_count_mismatch_marks_batch_failed_with_safe_response_error(
     with pytest.raises(EmbeddingResponseError) as captured:
         asyncio.run(service(monkeypatch, state, provider).reindex())
 
-    assert "数量" in str(captured.value)
+    assert str(captured.value) == "Embedding Provider 返回无效结果"
+    assert state.writes == []
+    assert state.failed == [selected]
+
+
+@pytest.mark.parametrize(
+    "malformation",
+    ["none", "no_protocol", "length_raises", "iteration_raises"],
+)
+def test_malformed_response_is_sanitized_and_marks_current_batch_failed(
+    monkeypatch: pytest.MonkeyPatch,
+    malformation: str,
+) -> None:
+    """所有 response 结构异常都必须在单一可信边界内脱敏失败。"""
+    events: list[str] = []
+    selected = [candidate(1), candidate(2)]
+    state = ProbeState(events, selected)
+    secret = "raw-response sk-malformed-secret 正文"
+
+    class LengthRaises:
+        def __len__(self) -> int:
+            raise RuntimeError(secret)
+
+        def __iter__(self) -> object:
+            return iter([vector(0), vector(1)])
+
+    class IterationRaises:
+        def __len__(self) -> int:
+            return 2
+
+        def __iter__(self) -> object:
+            raise RuntimeError(secret)
+
+    payloads: dict[str, object] = {
+        "none": None,
+        "no_protocol": object(),
+        "length_raises": LengthRaises(),
+        "iteration_raises": IterationRaises(),
+    }
+
+    class MalformedProvider(FakeProvider):
+        async def embed_texts(self, texts: Sequence[str]) -> object:
+            batch = list(texts)
+            self.calls.append(batch)
+            self._events.append(f"embedding:{','.join(batch)}")
+            return payloads[malformation]
+
+    provider = MalformedProvider(events)
+
+    with pytest.raises(EmbeddingResponseError) as captured:
+        asyncio.run(
+            service(
+                monkeypatch,
+                state,
+                provider,  # type: ignore[arg-type]
+            ).reindex()
+        )
+
+    assert str(captured.value) == "Embedding Provider 返回无效结果"
+    assert secret not in str(captured.value)
     assert state.writes == []
     assert state.failed == [selected]
 
@@ -486,3 +576,34 @@ def test_service_rejects_invalid_batch_size_before_opening_session(
     with pytest.raises(ValueError):
         service(monkeypatch, state, provider, batch_size=batch_size)  # type: ignore[arg-type]
     assert state.sessions == []
+
+
+def test_service_model_length_is_validated_before_session_or_provider_calls() -> None:
+    """Service 接受 128 字符 model，并在构造期拒绝清洗后超长 model。"""
+    events: list[str] = []
+    state = ProbeState(events, [])
+    session_factory = FakeSessionFactory(state)
+    provider = FakeProvider(events)
+    provider.model = "m" * 128
+
+    KnowledgeReindexService(
+        session_factory,  # type: ignore[arg-type]
+        provider,
+        batch_size=2,
+    )
+    assert state.sessions == []
+    assert provider.calls == []
+
+    oversized_model = "  " + ("s" * 129) + "  "
+    provider.model = oversized_model
+    with pytest.raises(EmbeddingInputError) as captured:
+        KnowledgeReindexService(
+            session_factory,  # type: ignore[arg-type]
+            provider,
+            batch_size=2,
+        )
+
+    assert "128" in str(captured.value)
+    assert oversized_model.strip() not in str(captured.value)
+    assert state.sessions == []
+    assert provider.calls == []

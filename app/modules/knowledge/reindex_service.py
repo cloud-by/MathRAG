@@ -65,13 +65,16 @@ class KnowledgeReindexService:
             raise EmbeddingInputError("Embedding Provider 配置无效") from None
         if type(model) is not str or not model.strip():
             raise EmbeddingInputError("Embedding 模型不能为空")
+        cleaned_model = model.strip()
+        if len(cleaned_model) > 128:
+            raise EmbeddingInputError("Embedding 模型长度不能超过 128")
         if type(dimensions) is not int or dimensions != 1024:
             raise EmbeddingInputError("Embedding 维度必须为 1024")
 
         self._session_factory = session_factory
         self._provider = provider
         self._batch_size = batch_size
-        self._embedding_model = model.strip()
+        self._embedding_model = cleaned_model
         self._dimensions = dimensions
 
     async def reindex(self) -> ReindexSummary:
@@ -145,19 +148,19 @@ class KnowledgeReindexService:
             await self._mark_batch_failed(batch)
             raise EmbeddingUnavailableError("Embedding Provider 暂时不可用") from None
 
-        if len(response) != len(batch):
-            await self._mark_batch_failed(batch)
-            raise EmbeddingResponseError("Embedding 返回数量与输入不一致")
-
-        vectors: list[list[float]] = []
         try:
+            if len(response) != len(batch):
+                raise EmbeddingResponseError("Embedding 返回数量与输入不一致")
+            vectors: list[list[float]] = []
             for values in response:
                 vectors.append(
                     validate_and_normalize_vector(values, self._dimensions)
                 )
+            if len(vectors) != len(batch):
+                raise EmbeddingResponseError("Embedding 返回数量与输入不一致")
         except Exception:
             await self._mark_batch_failed(batch)
-            raise EmbeddingResponseError("Embedding Provider 返回无效向量") from None
+            raise EmbeddingResponseError("Embedding Provider 返回无效结果") from None
         return vectors
 
     async def _write_batch(self, updates: Sequence[EmbeddingUpdate]) -> None:

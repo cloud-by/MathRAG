@@ -17,7 +17,7 @@ from app.modules.knowledge.errors import EmbeddingUnavailableError, KnowledgeSea
 from app.modules.knowledge.models import KnowledgeChunk, KnowledgeItem
 from app.modules.knowledge.reindex_service import KnowledgeReindexService, ReindexSummary
 from app.modules.knowledge.repository import KnowledgeRepository
-from app.modules.knowledge.search import EmbeddingUpdate
+from app.modules.knowledge.search import EmbeddingUpdate, ReindexCandidate
 from tests.integration.database_safety import require_test_database_url
 
 
@@ -314,6 +314,88 @@ async def exercise_reindex(database_url: str) -> None:
             except BaseException:
                 if not original_exception_pending and not cleanup_failed:
                     raise
+
+
+async def exercise_item_pairing_guard(
+    database_url: str,
+    operation: str,
+) -> None:
+    """验证 chunk/item 错配时当前事务不得留下任何写入。"""
+    engine = create_async_engine(database_url)
+    session_factory = async_sessionmaker(
+        engine,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+    try:
+        await reset(session_factory, [make_item(1), make_item(2)])
+        initial_states = await stored_states(session_factory)
+        chunk_id = UUID("00000000-0000-0000-0000-000000000001")
+        wrong_item_id = UUID("10000000-0000-0000-0000-000000000002")
+        wrong_candidate = ReindexCandidate(
+            chunk_id=chunk_id,
+            item_id=wrong_item_id,
+            retrieval_text="重建检索文本 1",
+        )
+        wrong_update = EmbeddingUpdate(
+            chunk_id=chunk_id,
+            item_id=wrong_item_id,
+            expected_retrieval_text="重建检索文本 1",
+            vector=tuple(vector(0)),
+        )
+
+        async with session_factory() as session:
+            repository = KnowledgeRepository(session)
+            with pytest.raises(KnowledgeSearchError, match="数量"):
+                async with session.begin():
+                    if operation == "write_ready_embeddings":
+                        await repository.write_ready_embeddings(
+                            [wrong_update],
+                            MODEL_V1,
+                        )
+                    else:
+                        await getattr(repository, operation)([wrong_candidate])
+
+        assert await stored_states(session_factory) == initial_states
+    finally:
+        original_exception_pending = sys.exc_info()[0] is not None
+        cleanup_failed = False
+        try:
+            await reset(session_factory)
+            await assert_database_restored(session_factory)
+        except BaseException:
+            cleanup_failed = True
+            if not original_exception_pending:
+                raise
+        finally:
+            try:
+                await engine.dispose()
+            except BaseException:
+                if not original_exception_pending and not cleanup_failed:
+                    raise
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        "write_ready_embeddings",
+        "mark_candidates_indexing",
+        "mark_chunks_failed",
+    ],
+)
+def test_repository_rejects_mismatched_chunk_item_pairs_and_rolls_back(
+    operation: str,
+) -> None:
+    """身份守卫后在专用 PG 上验证 DTO 复合身份 CAS。"""
+    database_url = os.getenv("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL 未配置")
+    database_url = require_test_database_url(
+        database_url,
+        os.getenv("DATABASE_URL"),
+    )
+
+    asyncio.run(exercise_item_pairing_guard(database_url, operation))
 
 
 def test_reindex_service_commits_batches_idempotently_and_preserves_failure_boundaries() -> None:

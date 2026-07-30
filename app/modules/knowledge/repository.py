@@ -6,7 +6,7 @@ import math
 from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import exists, func, or_, select, update
+from sqlalchemy import exists, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -115,22 +115,29 @@ class KnowledgeRepository:
         selected = _validated_candidates(candidates)
         if not selected:
             return 0
-        chunk_ids = [candidate.chunk_id for candidate in selected]
+        chunk_pairs = [
+            (candidate.chunk_id, candidate.item_id) for candidate in selected
+        ]
         item_ids = _unique_item_ids(selected)
 
         chunk_result = await self._session.execute(
             update(KnowledgeChunk)
-            .where(KnowledgeChunk.id.in_(chunk_ids))
+            .where(
+                tuple_(
+                    KnowledgeChunk.id,
+                    KnowledgeChunk.knowledge_item_id,
+                ).in_(chunk_pairs)
+            )
             .values(status="pending")
         )
-        _require_rowcount(chunk_result.rowcount, len(chunk_ids), "候选分块标记")
+        _require_rowcount(chunk_result.rowcount, len(chunk_pairs), "候选分块标记")
         item_result = await self._session.execute(
             update(KnowledgeItem)
             .where(KnowledgeItem.id.in_(item_ids))
             .values(status="indexing")
         )
         _require_rowcount(item_result.rowcount, len(item_ids), "候选条目标记")
-        return len(chunk_ids)
+        return len(chunk_pairs)
 
     async def write_ready_embeddings(
         self,
@@ -149,6 +156,7 @@ class KnowledgeRepository:
                 update(KnowledgeChunk)
                 .where(
                     KnowledgeChunk.id == embedding_update.chunk_id,
+                    KnowledgeChunk.knowledge_item_id == embedding_update.item_id,
                     KnowledgeChunk.retrieval_text
                     == embedding_update.expected_retrieval_text,
                 )
@@ -172,22 +180,29 @@ class KnowledgeRepository:
         selected = _validated_candidates(candidates)
         if not selected:
             return 0
-        chunk_ids = [candidate.chunk_id for candidate in selected]
+        chunk_pairs = [
+            (candidate.chunk_id, candidate.item_id) for candidate in selected
+        ]
         item_ids = _unique_item_ids(selected)
 
         chunk_result = await self._session.execute(
             update(KnowledgeChunk)
-            .where(KnowledgeChunk.id.in_(chunk_ids))
+            .where(
+                tuple_(
+                    KnowledgeChunk.id,
+                    KnowledgeChunk.knowledge_item_id,
+                ).in_(chunk_pairs)
+            )
             .values(embedding=None, embedding_model=None, status="failed")
         )
-        _require_rowcount(chunk_result.rowcount, len(chunk_ids), "失败分块标记")
+        _require_rowcount(chunk_result.rowcount, len(chunk_pairs), "失败分块标记")
         item_result = await self._session.execute(
             update(KnowledgeItem)
             .where(KnowledgeItem.id.in_(item_ids))
             .values(status="failed")
         )
         _require_rowcount(item_result.rowcount, len(item_ids), "失败条目标记")
-        return len(chunk_ids)
+        return len(chunk_pairs)
 
     async def refresh_item_statuses(self, item_ids: Sequence[UUID]) -> int:
         """只把至少有一条分块且全部分块有效就绪的条目置 ready。"""
@@ -295,7 +310,10 @@ def _validated_embedding_model(embedding_model: str) -> str:
     """验证并清洗用于持久化边界的模型标识。"""
     if type(embedding_model) is not str or not embedding_model.strip():
         raise KnowledgeSearchError("embedding_model 必须是非空字符串")
-    return embedding_model.strip()
+    cleaned_model = embedding_model.strip()
+    if len(cleaned_model) > 128:
+        raise KnowledgeSearchError("embedding_model 长度不能超过 128")
+    return cleaned_model
 
 
 def _validated_candidates(

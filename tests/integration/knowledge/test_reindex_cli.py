@@ -151,6 +151,62 @@ def test_run_reindex_closes_injected_provider_and_engine_on_success(
     ]
 
 
+def test_run_reindex_recreates_and_disposes_global_provider_on_each_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """同一进程内每次全局运行都必须使用新 Provider 并清空缓存。"""
+    import app.infrastructure.embedding.provider as provider_module
+    import scripts.reindex_knowledge as command
+
+    instances: list[Provider] = []
+    disposed_engines = 0
+
+    class Provider:
+        model = MODEL
+        dimensions = 1024
+
+        def __init__(self) -> None:
+            self.close_calls = 0
+            instances.append(self)
+
+        async def aclose(self) -> None:
+            self.close_calls += 1
+
+    class Service:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        async def reindex(self) -> ReindexSummary:
+            return summary()
+
+    async def dispose_database() -> None:
+        nonlocal disposed_engines
+        disposed_engines += 1
+
+    monkeypatch.setattr(provider_module, "_embedding_provider", None)
+    monkeypatch.setattr(provider_module, "OpenAIEmbeddingProvider", Provider)
+    monkeypatch.setattr(
+        command,
+        "get_embedding_provider",
+        provider_module.get_embedding_provider,
+    )
+    monkeypatch.setattr(command, "KnowledgeReindexService", Service)
+    monkeypatch.setattr(command, "dispose_engine", dispose_database)
+
+    for _ in range(2):
+        assert asyncio.run(
+            command.run_reindex(
+                session_factory=object(),  # type: ignore[arg-type]
+                batch_size=2,
+            )
+        ) == summary()
+        assert provider_module._embedding_provider is None
+
+    assert len(instances) == 2
+    assert [instance.close_calls for instance in instances] == [1, 1]
+    assert disposed_engines == 2
+
+
 def test_cleanup_failures_do_not_override_provider_business_error(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -179,14 +235,30 @@ def test_cleanup_failures_do_not_override_provider_business_error(
         events.append("database:dispose")
         raise RuntimeError("database sk-database-secret")
 
+    provider = Provider()
+
+    async def dispose_provider() -> None:
+        events.append("provider:dispose")
+        await provider.aclose()
+
     monkeypatch.setattr(command, "get_session_factory", lambda: object())
-    monkeypatch.setattr(command, "get_embedding_provider", Provider)
+    monkeypatch.setattr(command, "get_embedding_provider", lambda: provider)
+    monkeypatch.setattr(
+        command,
+        "dispose_embedding_provider",
+        dispose_provider,
+        raising=False,
+    )
     monkeypatch.setattr(command, "KnowledgeReindexService", Service)
     monkeypatch.setattr(command, "dispose_engine", dispose_database)
 
     assert command.main() == 3
     captured = capsys.readouterr()
-    assert events == ["provider:close", "database:dispose"]
+    assert events == [
+        "provider:dispose",
+        "provider:close",
+        "database:dispose",
+    ]
     assert json.loads(captured.err) == {
         "detail": "EmbeddingUnavailableError",
         "error": "embedding_unavailable",
@@ -222,14 +294,30 @@ def test_cleanup_failure_without_business_error_maps_to_database_exit_and_still_
     async def dispose_database() -> None:
         events.append("database:dispose")
 
+    provider = Provider()
+
+    async def dispose_provider() -> None:
+        events.append("provider:dispose")
+        await provider.aclose()
+
     monkeypatch.setattr(command, "get_session_factory", lambda: object())
-    monkeypatch.setattr(command, "get_embedding_provider", Provider)
+    monkeypatch.setattr(command, "get_embedding_provider", lambda: provider)
+    monkeypatch.setattr(
+        command,
+        "dispose_embedding_provider",
+        dispose_provider,
+        raising=False,
+    )
     monkeypatch.setattr(command, "KnowledgeReindexService", Service)
     monkeypatch.setattr(command, "dispose_engine", dispose_database)
 
     assert command.main() == 1
     captured = capsys.readouterr()
-    assert events == ["provider:close", "database:dispose"]
+    assert events == [
+        "provider:dispose",
+        "provider:close",
+        "database:dispose",
+    ]
     assert json.loads(captured.err) == {
         "detail": "RuntimeError",
         "error": "database_error",

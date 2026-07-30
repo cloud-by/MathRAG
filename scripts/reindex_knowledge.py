@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.infrastructure.database.session import dispose_engine, get_session_factory
 from app.infrastructure.embedding.provider import (
     EmbeddingProvider,
+    dispose_embedding_provider,
     get_embedding_provider,
 )
 from app.modules.knowledge.errors import (
@@ -33,6 +34,7 @@ async def run_reindex(
     batch_size: int | None = None,
 ) -> ReindexSummary:
     """执行一次重建，并始终尝试释放 Provider 和数据库引擎。"""
+    uses_global_provider = provider is None
     active_provider = provider
     business_error: BaseException | None = None
     try:
@@ -56,7 +58,12 @@ async def run_reindex(
         raise
     finally:
         cleanup_error: BaseException | None = None
-        if active_provider is not None:
+        if uses_global_provider:
+            try:
+                await dispose_embedding_provider()
+            except BaseException as exc:
+                cleanup_error = exc
+        elif active_provider is not None:
             try:
                 await active_provider.aclose()
             except BaseException as exc:
