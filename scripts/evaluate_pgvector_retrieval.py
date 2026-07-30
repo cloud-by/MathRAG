@@ -24,7 +24,8 @@ from app.core.config import settings
 from app.infrastructure.database.session import dispose_engine, get_session_factory
 from app.infrastructure.embedding.provider import (
     EmbeddingProvider,
-    OpenAIEmbeddingProvider,
+    dispose_embedding_provider,
+    get_embedding_provider,
 )
 from app.modules.knowledge.errors import (
     EmbeddingInputError,
@@ -544,36 +545,17 @@ async def run_evaluation(
     session_factory: Callable[[], Any],
     repository_factory: Callable[[Any], Any] = KnowledgeRepository,
     timer: Callable[[], float] = time.perf_counter,
-    dispose_database: Callable[[], Any] = dispose_engine,
 ) -> tuple[list[dict[str, object]], RetrievalMetrics]:
-    """运行对账，并在成功或失败时都关闭 Provider 与数据库连接池。"""
-    business_error: BaseException | None = None
-    try:
-        return await evaluate_questions(
-            questions=questions,
-            top_k=top_k,
-            provider=provider,
-            legacy_retriever=legacy_retriever,
-            session_factory=session_factory,
-            repository_factory=repository_factory,
-            timer=timer,
-        )
-    except BaseException as exc:
-        business_error = exc
-        raise
-    finally:
-        cleanup_error: BaseException | None = None
-        try:
-            await provider.aclose()
-        except BaseException as exc:
-            cleanup_error = exc
-        try:
-            await dispose_database()
-        except BaseException as exc:
-            if cleanup_error is None:
-                cleanup_error = exc
-        if business_error is None and cleanup_error is not None:
-            raise cleanup_error
+    """运行对账；Provider 与数据库资源统一由 CLI 外层拥有。"""
+    return await evaluate_questions(
+        questions=questions,
+        top_k=top_k,
+        provider=provider,
+        legacy_retriever=legacy_retriever,
+        session_factory=session_factory,
+        repository_factory=repository_factory,
+        timer=timer,
+    )
 
 
 def _load_evaluation_fixture(path: Path) -> tuple[dict[str, Any], str]:
@@ -613,35 +595,54 @@ def _git_sha() -> str:
 
 
 async def _run_cli(fixture_path: Path, output_path: Path) -> RetrievalMetrics:
-    """执行真实 Provider/数据库对账，并仅在门槛通过后写 artifact。"""
-    fixture, seed_sha256 = _load_evaluation_fixture(fixture_path)
-    provider_origin_sha256 = hash_provider_origin(settings.EMBEDDING_BASE_URL)
-    legacy_retriever = LegacyFaissRetriever(
-        index_path=settings.FAISS_INDEX_PATH,
-        id_map_path=settings.ID_MAP_PATH,
-    )
-    provider = OpenAIEmbeddingProvider()
-    rows, metrics = await run_evaluation(
-        questions=fixture["questions"],
-        top_k=fixture["top_k"],
-        provider=provider,
-        legacy_retriever=legacy_retriever,
-        session_factory=get_session_factory(),
-    )
-    write_success_artifact(
-        output_path,
-        metrics=metrics,
-        questions=rows,
-        git_sha=_git_sha(),
-        fixture_sha256=sha256_file(fixture_path),
-        seed_sha256=seed_sha256,
-        faiss_sha256=sha256_file(settings.FAISS_INDEX_PATH),
-        id_map_sha256=sha256_file(settings.ID_MAP_PATH),
-        embedding_model=provider.model,
-        dimensions=provider.dimensions,
-        provider_origin_sha256=provider_origin_sha256,
-    )
-    return metrics
+    """执行真实对账，并统一拥有全局 Provider 与数据库连接池。"""
+    business_error: BaseException | None = None
+    try:
+        provider = get_embedding_provider()
+        fixture, seed_sha256 = _load_evaluation_fixture(fixture_path)
+        provider_origin_sha256 = hash_provider_origin(settings.EMBEDDING_BASE_URL)
+        legacy_retriever = LegacyFaissRetriever(
+            index_path=settings.FAISS_INDEX_PATH,
+            id_map_path=settings.ID_MAP_PATH,
+        )
+        session_factory = get_session_factory()
+        rows, metrics = await run_evaluation(
+            questions=fixture["questions"],
+            top_k=fixture["top_k"],
+            provider=provider,
+            legacy_retriever=legacy_retriever,
+            session_factory=session_factory,
+        )
+        write_success_artifact(
+            output_path,
+            metrics=metrics,
+            questions=rows,
+            git_sha=_git_sha(),
+            fixture_sha256=sha256_file(fixture_path),
+            seed_sha256=seed_sha256,
+            faiss_sha256=sha256_file(settings.FAISS_INDEX_PATH),
+            id_map_sha256=sha256_file(settings.ID_MAP_PATH),
+            embedding_model=provider.model,
+            dimensions=provider.dimensions,
+            provider_origin_sha256=provider_origin_sha256,
+        )
+        return metrics
+    except BaseException as exc:
+        business_error = exc
+        raise
+    finally:
+        cleanup_error: BaseException | None = None
+        try:
+            await dispose_embedding_provider()
+        except BaseException as exc:
+            cleanup_error = exc
+        try:
+            await dispose_engine()
+        except BaseException as exc:
+            if cleanup_error is None:
+                cleanup_error = exc
+        if business_error is None and cleanup_error is not None:
+            raise cleanup_error
 
 
 def build_parser() -> argparse.ArgumentParser:

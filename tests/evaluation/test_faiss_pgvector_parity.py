@@ -11,6 +11,8 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
+from app.infrastructure.embedding import provider as embedding_provider_module
+from app.modules.knowledge.errors import EmbeddingUnavailableError
 from scripts import evaluate_pgvector_retrieval as evaluator_module
 from scripts.evaluate_pgvector_retrieval import (
     EvaluationInputError,
@@ -436,6 +438,27 @@ def test_legacy_adapter_rejects_invalid_vector_or_top_k(
         retriever.search_vector(vector, top_k=top_k)
 
 
+@pytest.mark.parametrize("value", [1e39, 1e-50])
+def test_legacy_adapter_rejects_float32_overflow_or_underflow_before_search(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    value: float,
+) -> None:
+    index = _FakeIndex(ntotal=1, indices=[0])
+    retriever = _build_legacy_adapter(
+        tmp_path,
+        monkeypatch,
+        index=index,
+        id_map_text='{"0": {"source_id": "k0001"}}',
+    )
+
+    with pytest.raises(ValueError) as captured:
+        retriever.search_vector([value] + [0.0] * 1023, top_k=1)
+
+    assert str(value) not in str(captured.value)
+    assert index.calls == []
+
+
 def test_evaluator_rejects_invalid_provider_contract() -> None:
     questions = [
         {
@@ -483,6 +506,45 @@ class _FakeProvider:
     async def aclose(self) -> None:
         self.events.append("provider-close")
         self.closed = True
+
+
+class _GlobalFakeProvider:
+    model = "embedding-test"
+    dimensions = 1024
+
+    def __init__(self, *, close_error: BaseException | None = None) -> None:
+        self.close_calls = 0
+        self.close_error = close_error
+
+    async def aclose(self) -> None:
+        self.close_calls += 1
+        if self.close_error is not None:
+            raise self.close_error
+
+
+def _install_global_provider(
+    monkeypatch: pytest.MonkeyPatch,
+    provider: _GlobalFakeProvider,
+) -> None:
+    monkeypatch.setattr(embedding_provider_module, "_embedding_provider", provider)
+    monkeypatch.setattr(
+        evaluator_module,
+        "get_embedding_provider",
+        embedding_provider_module.get_embedding_provider,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        evaluator_module,
+        "dispose_embedding_provider",
+        embedding_provider_module.dispose_embedding_provider,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        evaluator_module,
+        "OpenAIEmbeddingProvider",
+        lambda: provider,
+        raising=False,
+    )
 
 
 def test_evaluator_batches_provider_and_times_only_repository_sql() -> None:
@@ -606,56 +668,143 @@ def test_evaluator_batches_provider_and_times_only_repository_sql() -> None:
     ) == 52
 
 
-def test_run_evaluation_closes_provider_and_database_on_failure() -> None:
-    events: list[object] = []
-    questions = [
-        {
-            "id": f"rq-{index:04d}",
-            "question": f"问题 {index}",
-            "expected_legacy_ids": [f"k{index:04d}"],
-        }
-        for index in range(1, 27)
-    ]
-    provider = _FakeProvider([[1.0] + [0.0] * 1023] * 26, events)
-
-    class FailingLegacy:
-        def search_vector(self, vector: list[float], *, top_k: int) -> list[str]:
-            raise RuntimeError("boom")
+@pytest.mark.parametrize("failure_stage", ["fixture", "session", "evaluation"])
+def test_cli_failure_cleans_global_resources_once_and_redacts_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure_stage: str,
+) -> None:
+    provider = _GlobalFakeProvider()
+    _install_global_provider(monkeypatch, provider)
+    dispose_calls: list[str] = []
 
     async def dispose_database() -> None:
-        events.append("database-dispose")
+        dispose_calls.append("database")
 
-    class FakeSessionContext:
-        async def __aenter__(self) -> object:
-            return object()
+    def load_fixture(path: Path) -> tuple[dict[str, object], str]:
+        if failure_stage == "fixture":
+            raise RuntimeError("fixture-secret")
+        return {"questions": [], "top_k": 3}, "a" * 64
 
-        async def __aexit__(self, *args: object) -> None:
-            return None
+    def session_factory() -> object:
+        if failure_stage == "session":
+            raise RuntimeError("session-secret")
+        return object()
 
-    class WarmupRepository:
-        def __init__(self, session: object) -> None:
-            pass
+    async def evaluate(**kwargs: object) -> tuple[list[dict[str, object]], RetrievalMetrics]:
+        if failure_stage == "evaluation":
+            raise RuntimeError("evaluation-secret")
+        raise AssertionError("未选择失败阶段")
 
-        async def search_ready_chunks(self, **kwargs: object) -> list[object]:
-            return []
+    monkeypatch.setattr(evaluator_module, "dispose_engine", dispose_database)
+    monkeypatch.setattr(evaluator_module, "_load_evaluation_fixture", load_fixture)
+    monkeypatch.setattr(evaluator_module, "hash_provider_origin", lambda value: "f" * 64)
+    monkeypatch.setattr(evaluator_module, "LegacyFaissRetriever", lambda **kwargs: object())
+    monkeypatch.setattr(evaluator_module, "get_session_factory", session_factory)
+    monkeypatch.setattr(evaluator_module, "run_evaluation", evaluate)
+    output_path = tmp_path / "parity.json"
 
-    async def exercise() -> None:
-        with pytest.raises(RuntimeError, match="boom"):
-            await run_evaluation(
-                questions=questions,
-                top_k=3,
-                provider=provider,
-                legacy_retriever=FailingLegacy(),
-                session_factory=FakeSessionContext,
-                repository_factory=WarmupRepository,
-                timer=lambda: 0.0,
-                dispose_database=dispose_database,
-            )
+    exit_code = evaluator_module.main(
+        ["--fixture", "fixture.json", "--output", str(output_path)]
+    )
 
-    asyncio.run(exercise())
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert "secret" not in captured.err.lower()
+    assert "RuntimeError" in captured.err
+    assert provider.close_calls == 1
+    assert embedding_provider_module._embedding_provider is None
+    assert dispose_calls == ["database"]
+    assert not output_path.exists()
 
-    assert provider.closed is True
-    assert events[-2:] == ["provider-close", "database-dispose"]
+
+def test_cli_cleanup_errors_do_not_override_business_exit_classification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    provider = _GlobalFakeProvider(close_error=RuntimeError("cleanup-secret"))
+    _install_global_provider(monkeypatch, provider)
+    dispose_calls: list[str] = []
+
+    async def failing_dispose_database() -> None:
+        dispose_calls.append("database")
+        raise RuntimeError("database-cleanup-secret")
+
+    async def fail_business(**kwargs: object) -> tuple[list[dict[str, object]], RetrievalMetrics]:
+        raise EmbeddingUnavailableError("business-secret")
+
+    monkeypatch.setattr(evaluator_module, "dispose_engine", failing_dispose_database)
+    monkeypatch.setattr(
+        evaluator_module,
+        "_load_evaluation_fixture",
+        lambda path: ({"questions": [], "top_k": 3}, "a" * 64),
+    )
+    monkeypatch.setattr(evaluator_module, "hash_provider_origin", lambda value: "f" * 64)
+    monkeypatch.setattr(evaluator_module, "LegacyFaissRetriever", lambda **kwargs: object())
+    monkeypatch.setattr(evaluator_module, "get_session_factory", lambda: object())
+    monkeypatch.setattr(evaluator_module, "run_evaluation", fail_business)
+    output_path = tmp_path / "parity.json"
+
+    exit_code = evaluator_module.main(
+        ["--fixture", "fixture.json", "--output", str(output_path)]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 3
+    assert captured.out == ""
+    assert "EmbeddingUnavailableError" in captured.err
+    assert "secret" not in captured.err.lower()
+    assert provider.close_calls == 1
+    assert embedding_provider_module._embedding_provider is None
+    assert dispose_calls == ["database"]
+    assert not output_path.exists()
+
+
+def test_cli_success_closes_global_resources_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    provider = _GlobalFakeProvider()
+    _install_global_provider(monkeypatch, provider)
+    dispose_calls: list[str] = []
+    written_metrics: list[RetrievalMetrics] = []
+
+    async def dispose_database() -> None:
+        dispose_calls.append("database")
+
+    async def evaluate(**kwargs: object) -> tuple[list[dict[str, object]], RetrievalMetrics]:
+        return [], _passing_metrics()
+
+    def write_artifact(output_path: Path, **kwargs: object) -> dict[str, object]:
+        written_metrics.append(kwargs["metrics"])
+        return {}
+
+    monkeypatch.setattr(evaluator_module, "dispose_engine", dispose_database)
+    monkeypatch.setattr(
+        evaluator_module,
+        "_load_evaluation_fixture",
+        lambda path: ({"questions": [], "top_k": 3}, "a" * 64),
+    )
+    monkeypatch.setattr(evaluator_module, "hash_provider_origin", lambda value: "f" * 64)
+    monkeypatch.setattr(evaluator_module, "LegacyFaissRetriever", lambda **kwargs: object())
+    monkeypatch.setattr(evaluator_module, "get_session_factory", lambda: object())
+    monkeypatch.setattr(evaluator_module, "run_evaluation", evaluate)
+    monkeypatch.setattr(evaluator_module, "write_success_artifact", write_artifact)
+    monkeypatch.setattr(evaluator_module, "_git_sha", lambda: "a" * 40)
+    monkeypatch.setattr(evaluator_module, "sha256_file", lambda path: "b" * 64)
+
+    metrics = asyncio.run(
+        evaluator_module._run_cli(Path("fixture.json"), tmp_path / "parity.json")
+    )
+
+    assert metrics == _passing_metrics()
+    assert written_metrics == [metrics]
+    assert provider.close_calls == 1
+    assert embedding_provider_module._embedding_provider is None
+    assert dispose_calls == ["database"]
 
 
 def test_threshold_failure_does_not_write_success_artifact(tmp_path: Path) -> None:

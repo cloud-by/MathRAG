@@ -106,10 +106,15 @@ class LegacyFaissRetriever:
         if not any(value != 0.0 for value in values):
             raise ValueError("query vector 不能是零向量")
 
+        with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+            query = np.asarray([values], dtype="float32")
+        if query.shape != (1, EMBEDDING_DIMENSIONS) or not np.isfinite(query).all():
+            raise ValueError("query vector 必须是 1024 维有限向量")
+        if not np.any(query != 0.0):
+            raise ValueError("query vector 不能是零向量")
         requested_k = min(top_k, self._index.ntotal)
         if requested_k == 0:
             return []
-        query = np.asarray([values], dtype="float32")
         _distances, indices = self._index.search(query, requested_k)
         try:
             index_row = indices.tolist()[0]
