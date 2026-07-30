@@ -384,8 +384,8 @@ def _validated_item_ids(item_ids: Sequence[UUID]) -> list[UUID]:
 
 
 def _unique_item_ids(candidates: Sequence[ReindexCandidate]) -> list[UUID]:
-    """按首次出现顺序提取候选的条目 UUID。"""
-    return list(dict.fromkeys(candidate.item_id for candidate in candidates))
+    """去重并按字典序提取候选的条目 UUID。"""
+    return sorted({candidate.item_id for candidate in candidates}, key=str)
 
 
 def _require_rowcount(actual: object, expected: int, operation: str) -> None:

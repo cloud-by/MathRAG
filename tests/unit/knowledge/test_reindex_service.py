@@ -268,6 +268,63 @@ def test_candidate_query_uses_only_the_three_planned_reindex_conditions() -> Non
     assert "vector_norm" not in sql
 
 
+@pytest.mark.parametrize(
+    "method_name",
+    ["mark_candidates_indexing", "mark_chunks_failed"],
+)
+def test_repository_item_updates_deduplicate_and_sort_item_ids(
+    method_name: str,
+) -> None:
+    """批量更新 item 时必须按 UUID 字典序稳定加锁。"""
+
+    class RowCountResult:
+        def __init__(self, rowcount: int) -> None:
+            self.rowcount = rowcount
+
+    class CapturingSession:
+        def __init__(self) -> None:
+            self.statements: list[object] = []
+
+        async def execute(self, statement: object) -> RowCountResult:
+            self.statements.append(statement)
+            return RowCountResult(3 if len(self.statements) == 1 else 2)
+
+    lower_item_id = UUID("10000000-0000-0000-0000-000000000001")
+    higher_item_id = UUID("f0000000-0000-0000-0000-000000000002")
+    candidates = [
+        ReindexCandidate(
+            chunk_id=UUID("00000000-0000-0000-0000-000000000001"),
+            item_id=higher_item_id,
+            retrieval_text="高位 item 的首个 chunk",
+        ),
+        ReindexCandidate(
+            chunk_id=UUID("00000000-0000-0000-0000-000000000002"),
+            item_id=lower_item_id,
+            retrieval_text="低位 item 的 chunk",
+        ),
+        ReindexCandidate(
+            chunk_id=UUID("00000000-0000-0000-0000-000000000003"),
+            item_id=higher_item_id,
+            retrieval_text="高位 item 的重复 chunk",
+        ),
+    ]
+    session = CapturingSession()
+    repository = KnowledgeRepository(session)  # type: ignore[arg-type]
+
+    affected = asyncio.run(getattr(repository, method_name)(candidates))
+
+    assert affected == 3
+    item_update_parameters = session.statements[1].compile().params  # type: ignore[union-attr]
+    item_id_lists = [
+        value
+        for value in item_update_parameters.values()
+        if isinstance(value, list)
+        and value
+        and all(isinstance(item_id, UUID) for item_id in value)
+    ]
+    assert item_id_lists == [[lower_item_id, higher_item_id]]
+
+
 def test_chunked_preserves_order_and_rejects_non_positive_true_integer_sizes() -> None:
     """分批保持原始顺序，批大小只接受正真整数。"""
     assert list(chunked([1, 2, 3, 4, 5], 2)) == [[1, 2], [3, 4], [5]]
