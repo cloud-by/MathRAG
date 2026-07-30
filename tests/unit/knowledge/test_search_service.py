@@ -3,18 +3,30 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from collections.abc import Sequence
 from uuid import UUID
 
 import pytest
 
 import app.modules.knowledge.search_service as search_service_module
-from app.modules.knowledge.errors import EmbeddingResponseError, KnowledgeSearchError
+from app.modules.knowledge.errors import (
+    EmbeddingResponseError,
+    EmbeddingUnavailableError,
+    KnowledgeSearchError,
+)
 from app.modules.knowledge.search import KnowledgeSearchHit, merge_search_hits
 from app.modules.knowledge.search_service import (
     KnowledgeSearchService,
     build_knowledge_search_service,
 )
+
+
+def unit(axis: int) -> list[float]:
+    """构造满足 Repository 固定契约的 1024 维单位向量。"""
+    vector = [0.0] * 1024
+    vector[axis] = 1.0
+    return vector
 
 
 def make_hit(chunk_number: int, *, distance: float) -> KnowledgeSearchHit:
@@ -48,9 +60,12 @@ class FakeProvider:
         self,
         events: list[str],
         vectors: list[list[float]] | None = None,
+        *,
+        error: Exception | None = None,
     ) -> None:
         self._events = events
         self._vectors = vectors
+        self._error = error
         self.calls: list[list[str]] = []
         self.close_calls = 0
 
@@ -59,9 +74,11 @@ class FakeProvider:
         self.calls.append(list(texts))
         await asyncio.sleep(0)
         self._events.append("embedding:end")
+        if self._error is not None:
+            raise self._error
         if self._vectors is not None:
             return [list(vector) for vector in self._vectors]
-        return [[float(index + 1)] for index in range(len(texts))]
+        return [unit(index) for index in range(len(texts))]
 
     async def aclose(self) -> None:
         self.close_calls += 1
@@ -147,10 +164,18 @@ class FakeRepository:
     ) -> list[KnowledgeSearchHit]:
         if self._session.active:
             raise AssertionError("同一 AsyncSession 不得并发执行 SQL")
+        vector = [float(value) for value in query_vector]
+        norm = math.sqrt(math.fsum(value * value for value in vector))
+        if (
+            len(vector) != 1024
+            or not all(math.isfinite(value) for value in vector)
+            or not math.isclose(norm, 1.0, rel_tol=1e-12, abs_tol=1e-12)
+        ):
+            raise AssertionError("查询向量必须是 1024 维有限非零单位向量")
         call_index = len(self._session.calls)
         self._session.calls.append(
             {
-                "query_vector": list(query_vector),
+                "query_vector": vector,
                 "embedding_model": embedding_model,
                 "limit": limit,
             }
@@ -181,7 +206,7 @@ def test_search_batches_normalized_distinct_queries_then_uses_one_session_sequen
 ) -> None:
     """向量化必须先完成，数据库调用须同会话、顺序执行并在关闭后合并。"""
     events: list[str] = []
-    provider = FakeProvider(events, [[1.0], [2.0]])
+    provider = FakeProvider(events, [unit(0), unit(1)])
     session = FakeSession(
         events,
         [
@@ -224,12 +249,12 @@ def test_search_batches_normalized_distinct_queries_then_uses_one_session_sequen
     assert len(session.repositories) == 1
     assert session.calls == [
         {
-            "query_vector": [1.0],
+            "query_vector": unit(0),
             "embedding_model": "embedding-test",
             "limit": 2,
         },
         {
-            "query_vector": [2.0],
+            "query_vector": unit(1),
             "embedding_model": "embedding-test",
             "limit": 2,
         },
@@ -239,6 +264,48 @@ def test_search_batches_normalized_distinct_queries_then_uses_one_session_sequen
         (UUID(int=1), 0.1),
         (UUID(int=2), 0.2),
     ]
+
+
+@pytest.mark.parametrize("queries", ["方程", b"query", bytearray(b"query")])
+def test_search_rejects_scalar_query_containers_before_external_calls(
+    monkeypatch: pytest.MonkeyPatch,
+    queries: object,
+) -> None:
+    """裸字符串和字节容器不得被误当作查询元素序列。"""
+    events: list[str] = []
+    provider = FakeProvider(events)
+    factory = FakeSessionFactory(FakeSession(events))
+    service = make_service(monkeypatch, provider, factory)
+
+    async def exercise() -> None:
+        with pytest.raises(ValueError):
+            await service.search(queries, top_k=1)  # type: ignore[arg-type]
+
+    asyncio.run(exercise())
+    assert provider.calls == []
+    assert factory.call_count == 0
+    assert events == []
+
+
+@pytest.mark.parametrize("queries", [[True], [None], [123], ["方程", False]])
+def test_search_rejects_non_string_query_elements_before_external_calls(
+    monkeypatch: pytest.MonkeyPatch,
+    queries: list[object],
+) -> None:
+    """查询元素必须是真实字符串，不得通过 str() 静默转换。"""
+    events: list[str] = []
+    provider = FakeProvider(events)
+    factory = FakeSessionFactory(FakeSession(events))
+    service = make_service(monkeypatch, provider, factory)
+
+    async def exercise() -> None:
+        with pytest.raises(ValueError):
+            await service.search(queries, top_k=1)  # type: ignore[arg-type]
+
+    asyncio.run(exercise())
+    assert provider.calls == []
+    assert factory.call_count == 0
+    assert events == []
 
 
 @pytest.mark.parametrize("queries", [[], [" ", "\n\t"]])
@@ -308,7 +375,7 @@ def test_search_accepts_top_k_boundaries_and_forwards_them(
 ) -> None:
     """在线检索须接受闭区间两端，并原样传给仓储。"""
     events: list[str] = []
-    provider = FakeProvider(events, [[1.0]])
+    provider = FakeProvider(events, [unit(0)])
     session = FakeSession(events, [[]])
     factory = FakeSessionFactory(session)
     service = make_service(monkeypatch, provider, factory)
@@ -322,7 +389,7 @@ def test_search_rejects_embedding_count_mismatch_without_opening_session(
 ) -> None:
     """Provider 返回数量异常时只暴露安全领域错误，且不得接触数据库。"""
     events: list[str] = []
-    provider = FakeProvider(events, [[1.0]])
+    provider = FakeProvider(events, [unit(0)])
     factory = FakeSessionFactory(FakeSession(events))
     service = make_service(monkeypatch, provider, factory)
 
@@ -336,12 +403,33 @@ def test_search_rejects_embedding_count_mismatch_without_opening_session(
     assert events == ["embedding:start", "embedding:end"]
 
 
+def test_search_propagates_embedding_unavailable_without_opening_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Provider 不可用异常须原样传播，且向量化失败不得打开会话。"""
+    events: list[str] = []
+    failure = EmbeddingUnavailableError("EmbeddingUnavailableError")
+    provider = FakeProvider(events, error=failure)
+    factory = FakeSessionFactory(FakeSession(events))
+    service = make_service(monkeypatch, provider, factory)
+
+    async def exercise() -> None:
+        with pytest.raises(EmbeddingUnavailableError) as captured:
+            await service.search(["方程"], top_k=2)
+        assert captured.value is failure
+
+    asyncio.run(exercise())
+    assert provider.calls == [["方程"]]
+    assert factory.call_count == 0
+    assert events == ["embedding:start", "embedding:end"]
+
+
 def test_search_closes_session_and_propagates_sql_error_without_transaction_calls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """SQL 异常必须向上传播，同时依赖上下文关闭会话且不手工提交或回滚。"""
     events: list[str] = []
-    provider = FakeProvider(events, [[1.0], [2.0]])
+    provider = FakeProvider(events, [unit(0), unit(1)])
     session = FakeSession(events, [[], []], sql_error_at=1)
     factory = FakeSessionFactory(session)
     service = make_service(monkeypatch, provider, factory)
