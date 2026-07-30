@@ -395,6 +395,55 @@ def test_artifact_rejects_metrics_not_recalculated_from_details(
 
 
 @pytest.mark.parametrize(
+    ("case", "message"),
+    [
+        ("low_hit_rate", "90%"),
+        ("low_overlap", "80%"),
+        ("slow_p95", "100 ms"),
+    ],
+)
+def test_build_artifact_rejects_recalculated_metrics_below_threshold(
+    case: str,
+    message: str,
+) -> None:
+    questions = _artifact_questions()
+    if case == "low_hit_rate":
+        questions[0]["expected_legacy_ids"] = ["k9999"]
+        questions[0]["expected_hit"] = False
+    elif case == "low_overlap":
+        for index, question in enumerate(questions[:4], start=1):
+            pgvector_ids = [
+                f"k{index + 700:04d}",
+                f"k{index + 800:04d}",
+                f"k{index + 900:04d}",
+            ]
+            question["expected_legacy_ids"] = [pgvector_ids[0]]
+            question["pgvector_source_ids"] = pgvector_ids
+            question["expected_hit"] = True
+            question["top_k_overlap"] = 0.0
+    else:
+        questions[-2]["pgvector_latency_ms"] = 101.0
+        questions[-1]["pgvector_latency_ms"] = 101.0
+
+    calculated = calculate_metrics(questions)
+
+    with pytest.raises(EvaluationThresholdError, match=message):
+        _build_test_artifact(questions, calculated)
+
+
+def test_build_artifact_serializes_only_recalculated_metrics() -> None:
+    questions = _artifact_questions()
+    calculated = calculate_metrics(questions)
+    caller_values = vars(calculated) | {
+        "expected_hit_rate": calculated.expected_hit_rate + 5e-13
+    }
+
+    artifact = _build_test_artifact(questions, RetrievalMetrics(**caller_values))
+
+    assert artifact["metrics"] == vars(calculated)
+
+
+@pytest.mark.parametrize(
     "case",
     ["string_latency", "string_overlap", "duplicate_source_id", "non_top_three"],
 )

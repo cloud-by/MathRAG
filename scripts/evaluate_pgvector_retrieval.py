@@ -387,7 +387,9 @@ def build_artifact(
     question_ids = [question["question_id"] for question in safe_questions]
     if len(set(question_ids)) != FIXED_QUESTION_COUNT:
         raise EvaluationInputError("artifact question_id 必须非空且唯一")
-    _assert_metrics_match_details(metrics, calculate_metrics(safe_questions))
+    calculated_metrics = calculate_metrics(safe_questions)
+    _assert_metrics_match_details(metrics, calculated_metrics)
+    assert_thresholds(calculated_metrics)
     document: dict[str, object] = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": _format_utc(generated_at or datetime.now(timezone.utc)),
@@ -407,7 +409,7 @@ def build_artifact(
             ),
         },
         "methodology": dict(METHODOLOGY),
-        "metrics": asdict(metrics),
+        "metrics": asdict(calculated_metrics),
         "questions": safe_questions,
     }
     serialized = json.dumps(
