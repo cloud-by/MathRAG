@@ -25,6 +25,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_SCHEMA_VERSION = "1.0"
 BASELINE_SCHEMA_VERSION = "1.0"
 FIXED_TOP_K = 3
+LEGACY_FAISS_INDEX_PATH = PROJECT_ROOT / "data" / "index" / "faiss.index"
+LEGACY_ID_MAP_PATH = PROJECT_ROOT / "data" / "index" / "id_map.json"
 FIXTURE_FIELDS = frozenset({"schema_version", "dataset_sha256", "top_k", "questions"})
 QUESTION_FIELDS = frozenset({"id", "question", "expected_legacy_ids", "rationale"})
 QUESTION_ID_PATTERN = re.compile(r"rq-\d{4}")
@@ -226,9 +228,7 @@ def build_embedding_metadata(settings_obj: Any) -> dict[str, Any]:
         "batch_size": settings_obj.EMBEDDING_BATCH_SIZE,
         "timeout_seconds": settings_obj.EMBEDDING_TIMEOUT,
         "normalize": settings_obj.EMBEDDING_NORMALIZE,
-        "similarity": (
-            "inner_product" if settings_obj.USE_INNER_PRODUCT else "l2_distance"
-        ),
+        "similarity": "inner_product",
         "provider_origin_sha256": hashlib.sha256(
             provider_origin.encode("utf-8")
         ).hexdigest(),
@@ -344,8 +344,8 @@ async def build_default_retrieve_fn_async(
         question_texts.append(text)
 
     active_retriever = legacy_retriever or LegacyFaissRetriever(
-        index_path=settings.FAISS_INDEX_PATH,
-        id_map_path=settings.ID_MAP_PATH,
+        index_path=LEGACY_FAISS_INDEX_PATH,
+        id_map_path=LEGACY_ID_MAP_PATH,
     )
     active_provider = provider or OpenAIEmbeddingProvider()
 
@@ -435,8 +435,8 @@ def main(
 
     artifacts = build_artifact_metadata(
         {
-            "faiss_index": settings.FAISS_INDEX_PATH,
-            "id_map": settings.ID_MAP_PATH,
+            "faiss_index": LEGACY_FAISS_INDEX_PATH,
+            "id_map": LEGACY_ID_MAP_PATH,
             "chunk_file": settings.PROCESSED_KB_PATH,
         }
     )

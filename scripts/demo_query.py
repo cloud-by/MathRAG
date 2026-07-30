@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -10,7 +11,10 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.core.config import settings
-from app.services.retriever import retrieve
+from app.modules.knowledge.search_service import (
+    KnowledgeSearchService,
+    build_knowledge_search_service,
+)
 
 
 def truncate_text(text: str, max_len: int = 160) -> str:
@@ -55,11 +59,21 @@ def print_result(item: Dict[str, Any], show_context: bool = False) -> None:
                 print(f"    {line}")
 
 
-def run_once(question: str, top_k: int, show_context: bool) -> None:
+async def run_once(
+    question: str,
+    top_k: int,
+    show_context: bool,
+    *,
+    search_service: KnowledgeSearchService,
+) -> None:
     print(f"\n检索问题：{question}")
     print(f"top_k={top_k}\n")
 
-    results = retrieve(question=question, top_k=top_k)
+    hits = await search_service.search([question], top_k=top_k)
+    results = [
+        hit.to_reference(rank=rank)
+        for rank, hit in enumerate(hits, start=1)
+    ]
     if not results:
         print("没有检索到结果。")
         return
@@ -69,7 +83,12 @@ def run_once(question: str, top_k: int, show_context: bool) -> None:
         print_result(item, show_context=show_context)
 
 
-def interactive_loop(top_k: int, show_context: bool) -> None:
+async def interactive_loop(
+    top_k: int,
+    show_context: bool,
+    *,
+    search_service: KnowledgeSearchService,
+) -> None:
     print("进入交互检索模式。直接输入数学问题，输入 exit / quit 退出。")
     while True:
         question = input("\n请输入问题> ").strip()
@@ -80,7 +99,12 @@ def interactive_loop(top_k: int, show_context: bool) -> None:
             print("问题不能为空。")
             continue
         try:
-            run_once(question=question, top_k=top_k, show_context=show_context)
+            await run_once(
+                question=question,
+                top_k=top_k,
+                show_context=show_context,
+                search_service=search_service,
+            )
         except Exception as exc:  # noqa: BLE001
             print(f"检索失败：{exc}")
 
@@ -102,18 +126,32 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
+async def async_main() -> None:
     args = parse_args()
+    search_service = build_knowledge_search_service()
 
     if args.interactive:
-        interactive_loop(top_k=args.top_k, show_context=args.show_context)
+        await interactive_loop(
+            top_k=args.top_k,
+            show_context=args.show_context,
+            search_service=search_service,
+        )
         return
 
     question = args.question.strip()
     if not question:
         question = "x^2+4x+3=0 怎么解？"
 
-    run_once(question=question, top_k=args.top_k, show_context=args.show_context)
+    await run_once(
+        question=question,
+        top_k=args.top_k,
+        show_context=args.show_context,
+        search_service=search_service,
+    )
+
+
+def main() -> None:
+    asyncio.run(async_main())
 
 
 if __name__ == "__main__":

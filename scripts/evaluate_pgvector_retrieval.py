@@ -46,6 +46,9 @@ from scripts.legacy_faiss_retriever import LegacyFaissRetriever
 SCHEMA_VERSION = "1.1"
 FIXED_QUESTION_COUNT = 26
 FIXED_TOP_K = 3
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+LEGACY_FAISS_INDEX_PATH = PROJECT_ROOT / "data" / "index" / "faiss.index"
+LEGACY_ID_MAP_PATH = PROJECT_ROOT / "data" / "index" / "id_map.json"
 METHODOLOGY = {
     "top_k": FIXED_TOP_K,
     "warmup_queries": 1,
@@ -706,8 +709,8 @@ async def _run_cli(
         fixture, seed_sha256 = _load_evaluation_fixture(fixture_path)
         provider_origin_sha256 = hash_provider_origin(settings.EMBEDDING_BASE_URL)
         legacy_retriever = LegacyFaissRetriever(
-            index_path=settings.FAISS_INDEX_PATH,
-            id_map_path=settings.ID_MAP_PATH,
+            index_path=LEGACY_FAISS_INDEX_PATH,
+            id_map_path=LEGACY_ID_MAP_PATH,
         )
         session_factory = get_session_factory()
         rows, metrics = await run_evaluation(
@@ -725,8 +728,8 @@ async def _run_cli(
             git_tree_sha=git_tree_sha,
             fixture_sha256=sha256_file(fixture_path),
             seed_sha256=seed_sha256,
-            faiss_sha256=sha256_file(settings.FAISS_INDEX_PATH),
-            id_map_sha256=sha256_file(settings.ID_MAP_PATH),
+            faiss_sha256=sha256_file(LEGACY_FAISS_INDEX_PATH),
+            id_map_sha256=sha256_file(LEGACY_ID_MAP_PATH),
             embedding_model=provider.model,
             dimensions=provider.dimensions,
             provider_origin_sha256=provider_origin_sha256,

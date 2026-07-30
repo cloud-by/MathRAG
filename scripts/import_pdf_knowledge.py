@@ -77,7 +77,8 @@ def main() -> None:
     if args.import_to_knowledge:
         print("Next: python -m scripts.validate_seed_jsonl")
         print("Next: python -m scripts.build_kb")
-        print("Next: python -m scripts.build_index")
+        print("Next: python -m scripts.import_legacy_knowledge")
+        print("Next: python -m scripts.reindex_knowledge")
 
 
 if __name__ == "__main__":

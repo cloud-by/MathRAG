@@ -30,8 +30,8 @@ def extract_knowledge(request: KnowledgeExtractRequest) -> KnowledgeExtractRespo
         if request.save:
             next_steps = [
                 "Run: python -m scripts.build_kb",
-                "Run: python -m scripts.build_index",
-                "Restart the service if it is already running.",
+                "Run: python -m scripts.import_legacy_knowledge",
+                "Run: python -m scripts.reindex_knowledge",
             ]
 
         return KnowledgeExtractResponse(

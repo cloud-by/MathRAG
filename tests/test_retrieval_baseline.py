@@ -220,7 +220,6 @@ def test_embedding_metadata_excludes_credentials() -> None:
         EMBEDDING_BATCH_SIZE = 10
         EMBEDDING_TIMEOUT = 60
         EMBEDDING_NORMALIZE = True
-        USE_INNER_PRODUCT = True
 
     metadata = baseline.build_embedding_metadata(FakeSettings())
     serialized = json.dumps(metadata).lower()

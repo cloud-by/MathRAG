@@ -1,6 +1,6 @@
 # MathRAG
 
-MathRAG 是一个面向数学问答场景的 RAG 原型系统，基于 **FastAPI + FAISS + OpenAI-Compatible Embedding API + DeepSeek/OpenAI-Compatible Chat API** 构建。
+MathRAG 是一个面向数学问答场景的 RAG 原型系统，基于 **FastAPI + PostgreSQL/pgvector + OpenAI-Compatible Embedding API + DeepSeek/OpenAI-Compatible Chat API** 构建。
 
 系统会先从本地结构化数学知识库中检索相关知识，再让大模型生成结构化回答，并通过浏览器前端展示答案、步骤、参考知识、检索规划和可继续追问的问题。
 
@@ -10,8 +10,8 @@ MathRAG 是一个面向数学问答场景的 RAG 原型系统，基于 **FastAPI
 
 - **数学 RAG 问答**：`/api/chat` 提供检索增强问答。
 - **Agentic 检索规划**：先由 LLM 将用户问题改写为 1~4 条检索子问题，再合并检索结果。
-- **FAISS 向量检索**：支持内积/IP 与 L2 两种索引度量方式。
-- **结构化知识库**：JSONL 种子知识 -> chunk -> FAISS 索引与 `id_map`。
+- **pgvector 向量检索**：PostgreSQL 是在线知识的唯一事实数据源，按状态、可见性和模型精确过滤。
+- **结构化知识库**：JSONL 种子知识经过可重复导入与 reindex 进入 PostgreSQL/pgvector。
 - **知识抽取**：支持从文本、公开网页源、本地 PDF 抽取并追加知识点。
 - **公式渲染**：前端通过 KaTeX 渲染 `\(...\)` 与 `\[...\]` 公式。
 - **LLM JSON 修复**：对模型输出中常见 LaTeX 反斜杠转义问题做容错修复。
@@ -29,17 +29,19 @@ MathRAG/
 │   ├── core/                 # 配置、日志
 │   ├── frontend/             # 原生 HTML/CSS/JS 前端，含 KaTeX 渲染
 │   ├── schemas/              # Pydantic 请求/响应模型
-│   ├── services/             # embedding、retriever、LLM、RAG、导入器
+│   ├── modules/knowledge/    # pgvector 模型、仓储、检索与 reindex 服务
+│   ├── services/             # LLM、RAG、导入器
 │   └── utils/                # Prompt 构建、文本清洗、数学后处理
 ├── data/
 │   ├── raw/                  # 原始知识库 JSONL
 │   ├── processed/            # 预处理后的 chunk JSONL
-│   └── index/                # FAISS 索引与 id_map
+│   └── index/                # 仅供历史 evaluation/回滚审计的冻结工件
 ├── scripts/                  # 构建、导入、验证、调试脚本
 ├── tests/                    # pytest 测试
 ├── Dockerfile
 ├── docker-compose.yml
-├── requirements.txt
+├── requirements.txt          # 生产依赖，不包含 FAISS
+├── requirements-evaluation.txt
 ├── run.py
 └── README.md
 ```
@@ -50,13 +52,13 @@ MathRAG/
 flowchart LR
   A["data/raw/math_knowledge_seed.jsonl"] --> B["scripts.build_kb"]
   B --> C["data/processed/kb_chunks.jsonl"]
-  C --> D["scripts.build_index"]
-  D --> E["data/index/faiss.index"]
-  D --> F["data/index/id_map.json"]
+  C --> D["scripts.import_legacy_knowledge"]
+  D --> E["PostgreSQL knowledge tables"]
+  E --> F["scripts.reindex_knowledge"]
+  F --> V["pgvector embeddings"]
   Q["用户问题"] --> P["LLM 检索规划"]
-  P --> R["FAISS 检索"]
-  E --> R
-  F --> R
+  P --> R["KnowledgeSearchService"]
+  V --> R
   R --> L["LLM 生成结构化答案"]
   L --> U["Web 前端 / API 响应"]
 ```
@@ -68,6 +70,7 @@ flowchart LR
 推荐环境：
 
 - Python 3.11+
+- PostgreSQL 及 pgvector 扩展
 - 可用的 OpenAI-Compatible Embedding API
 - 可用的 DeepSeek 或 OpenAI-Compatible Chat API
 - 如需 Docker 部署：Docker / Docker Compose
@@ -137,20 +140,28 @@ LLM_RETURN_REASONING=false
 
 # Retrieval
 TOP_K=3
-USE_INNER_PRODUCT=true
 ```
 
 说明：
 
-- `EMBEDDING_DIMENSIONS` 必须与实际 embedding 模型返回维度一致。
-- `scripts.build_index` 默认用 `--metric ip` 构建内积索引；如需 L2，可显式传 `--metric l2`。
+- `EMBEDDING_DIMENSIONS` 固定为 `1024`，必须与数据库列及实际 embedding 模型一致。
+- 在线检索只读取 PostgreSQL/pgvector，不读取 `data/index` 下的历史工件。
 - `/api/chat` 响应模型保留 `reasoning_content` 字段，当前通常返回 `null`。
 
 ---
 
 ## 快速启动
 
-如果 `data/index/faiss.index`、`data/index/id_map.json`、`data/processed/kb_chunks.jsonl` 已存在且与当前 embedding 配置匹配，可以直接启动：
+先启动数据库、执行迁移，并按下文导入和 reindex 知识数据：
+
+```bash
+docker compose up -d postgres
+alembic upgrade head
+python -m scripts.import_legacy_knowledge
+python -m scripts.reindex_knowledge
+```
+
+然后启动应用：
 
 ```bash
 python run.py
@@ -213,7 +224,7 @@ id, category, title, keywords, content, example, steps, difficulty
 
 ---
 
-## 构建知识库与索引
+## 导入知识库并构建 pgvector 向量
 
 ### 1. 校验种子知识库
 
@@ -259,33 +270,27 @@ python -m scripts.build_kb \
 - `answer_context`
 - `metadata`
 
-### 3. 构建 FAISS 索引
+### 3. 执行数据库迁移
 
 ```bash
-python -m scripts.build_index
+alembic upgrade head
 ```
 
-自定义路径和度量方式：
+### 4. 幂等导入历史知识
 
 ```bash
-python -m scripts.build_index \
-  --input data/processed/kb_chunks.jsonl \
-  --index-output data/index/faiss.index \
-  --id-map-output data/index/id_map.json \
-  --metric ip
+python -m scripts.import_legacy_knowledge
 ```
 
-`--metric` 可选：
+该命令读取 raw seed 与 processed chunk，写入 PostgreSQL；重复执行会按已有状态跳过，不维护第二套在线索引。
 
-- `ip`：内积，默认
-- `l2`：欧氏距离
+### 5. 生成或刷新 pgvector 向量
 
-生成：
-
-```text
-data/index/faiss.index
-data/index/id_map.json
+```bash
+python -m scripts.reindex_knowledge
 ```
+
+reindex 会批量调用 Embedding Provider，并把当前模型下成功的 chunk 更新为 `ready`。重复执行时只处理仍需更新的记录。
 
 ---
 
@@ -316,7 +321,8 @@ data/raw/math_knowledge_seed.jsonl
 ```bash
 python -m scripts.validate_seed_jsonl
 python -m scripts.build_kb
-python -m scripts.build_index
+python -m scripts.import_legacy_knowledge
+python -m scripts.reindex_knowledge
 ```
 
 ### 从公开数学站点导入
@@ -415,17 +421,12 @@ python -m scripts.normalize_latex_delimiters \
   --write
 ```
 
-如果只调整了 `kb_chunks.jsonl` 中的元数据，且 chunk 数量与顺序没有变化，可仅重建 `id_map.json`：
-
-```bash
-python -m scripts.rebuild_id_map_from_chunks
-```
-
-如果 chunk 数量、顺序或 `retrieval_text` 发生变化，应重新执行完整索引构建：
+如果 chunk 元数据、数量、顺序或 `retrieval_text` 发生变化，应重新构建 processed 输入、幂等导入并 reindex：
 
 ```bash
 python -m scripts.build_kb
-python -m scripts.build_index
+python -m scripts.import_legacy_knowledge
+python -m scripts.reindex_knowledge
 ```
 
 ---
@@ -459,6 +460,26 @@ python -m scripts.test_rag \
   --question "x^2+4x+3=0 怎么解？" \
   --show-full-json
 ```
+
+### 离线 FAISS/pgvector 对账
+
+生产依赖与 Docker 镜像不安装 FAISS。只有需要复核冻结历史工件时才安装 evaluation 依赖：
+
+```bash
+pip install -r requirements-evaluation.lock.txt
+python -m scripts.evaluate_pgvector_retrieval \
+  --fixture tests/fixtures/retrieval_questions.json \
+  --output docs/baselines/artifacts/pgvector-faiss-m3-2026-07-30.json \
+  --replace-existing
+```
+
+evaluation 使用同一批 query vectors 对账只读 legacy FAISS 与 pgvector；不得把历史 FAISS 工件重新接回在线请求路径。
+
+### 回滚
+
+- 发布前保留数据库备份和上一版本容器镜像；应用回滚优先重新部署上一镜像。
+- 数据迁移需要回滚时，按 Alembic 版本和数据库备份执行，不修改冻结的 evaluation 工件。
+- `data/index` 中的 FAISS/id_map 只作为历史审计或旧版本紧急回滚输入；当前 runtime lock 不含 FAISS，不能直接切回旧在线链路。
 
 ---
 
@@ -668,7 +689,8 @@ pytest -q
 
 - `/api/chat` 响应结构与异常处理
 - `/api/knowledge/extract` 保存/预览逻辑
-- RAG 多查询检索与引用合并
+- RAG 多查询规划与 Knowledge Search 批量检索
+- PostgreSQL/pgvector 导入、reindex、检索与运行时依赖边界
 - 数学知识导入器
 - PDF 知识导入器
 
@@ -682,7 +704,8 @@ pytest -q
 
 ```bash
 python -m scripts.build_kb
-python -m scripts.build_index
+python -m scripts.import_legacy_knowledge
+python -m scripts.reindex_knowledge
 ```
 
 ### `ModuleNotFoundError: No module named 'dotenv'`
@@ -702,14 +725,17 @@ LLM_API_KEY=...
 EMBEDDING_API_KEY=...
 ```
 
-### FAISS 索引数量与 `id_map` 数量不一致
+### pgvector 检索没有返回知识
 
-通常是只更新了部分数据文件。重新执行：
+先确认数据库迁移已到最新版本，再幂等导入并 reindex：
 
 ```bash
-python -m scripts.build_kb
-python -m scripts.build_index
+alembic upgrade head
+python -m scripts.import_legacy_knowledge
+python -m scripts.reindex_knowledge
 ```
+
+同时确认当前 Embedding 模型、固定 1024 维契约和数据库中 chunk 的 `ready` 状态一致。
 
 ### 公式没有渲染
 
@@ -725,7 +751,8 @@ python -m scripts.build_index
 
 - 新知识库记录只使用新版字段：`id/category/title/keywords/content/example/steps/difficulty`。
 - 新增公式统一使用 KaTeX LaTeX 分隔符。
-- 修改 `math_knowledge_seed.jsonl` 后，应依次执行校验、构建 chunk、构建索引。
+- 修改 `math_knowledge_seed.jsonl` 后，应依次执行校验、构建 chunk、幂等导入和 reindex。
+- 在线代码只依赖 PostgreSQL/pgvector；FAISS 仅允许出现在 evaluation 依赖和离线对账脚本中。
 - 临时 PDF、依赖、备份文件已通过 `.gitignore` / `.dockerignore` 排除。
 
 ---

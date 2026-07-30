@@ -44,8 +44,6 @@ class Settings:
 
     RAW_KB_PATH: Path = PROJECT_ROOT / "data" / "raw" / "math_knowledge_seed.jsonl"
     PROCESSED_KB_PATH: Path = PROJECT_ROOT / "data" / "processed" / "kb_chunks.jsonl"
-    FAISS_INDEX_PATH: Path = PROJECT_ROOT / "data" / "index" / "faiss.index"
-    ID_MAP_PATH: Path = PROJECT_ROOT / "data" / "index" / "id_map.json"
 
     EMBEDDING_API_KEY: str = os.getenv("EMBEDDING_API_KEY", "")
     EMBEDDING_BASE_URL: str = os.getenv("EMBEDDING_BASE_URL", "")
@@ -56,7 +54,6 @@ class Settings:
     EMBEDDING_NORMALIZE: bool = _to_bool(os.getenv("EMBEDDING_NORMALIZE"), True)
 
     TOP_K: int = int(os.getenv("TOP_K", "3"))
-    USE_INNER_PRODUCT: bool = _to_bool(os.getenv("USE_INNER_PRODUCT"), True)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "APP_ENV", self.APP_ENV.strip().lower())
