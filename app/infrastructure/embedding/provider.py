@@ -129,25 +129,39 @@ class OpenAIEmbeddingProvider:
 
             try:
                 data = list(response.data)
+            except EmbeddingResponseError:
+                raise
             except Exception:
                 raise EmbeddingResponseError("Embedding 返回结构无效") from None
             if len(data) != len(batch):
                 raise EmbeddingResponseError("Embedding 返回数量与输入不一致")
 
             try:
-                ordered = sorted(data, key=lambda item: item.index)
-                indexes = [item.index for item in ordered]
-            except (AttributeError, TypeError):
+                indexed = [(item.index, item) for item in data]
+            except EmbeddingResponseError:
+                raise
+            except Exception:
                 raise EmbeddingResponseError("Embedding 返回索引无效") from None
+            indexes = [index for index, _item in indexed]
             if any(type(index) is not int for index in indexes):
                 raise EmbeddingResponseError("Embedding 返回索引无效")
+            indexed.sort(key=lambda entry: entry[0])
+            indexes = [index for index, _item in indexed]
             if indexes != list(range(len(batch))):
                 raise EmbeddingResponseError("Embedding 返回索引不连续")
 
-            output.extend(
-                validate_and_normalize_vector(item.embedding, self._dimensions)
-                for item in ordered
-            )
+            for _index, item in indexed:
+                try:
+                    vector = validate_and_normalize_vector(
+                        item.embedding, self._dimensions
+                    )
+                except EmbeddingResponseError:
+                    raise
+                except Exception:
+                    raise EmbeddingResponseError(
+                        "Embedding 返回向量无效"
+                    ) from None
+                output.append(vector)
 
         if len(output) != len(cleaned):
             raise EmbeddingResponseError("Embedding 返回数量与输入不一致")

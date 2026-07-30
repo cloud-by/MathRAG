@@ -188,6 +188,52 @@ def test_vector_conversion_failure_is_safely_mapped() -> None:
     assert "sk-private-key" not in detail
 
 
+def test_index_property_failure_is_safely_mapped() -> None:
+    """读取恶意 index 属性失败时不得泄露原始响应诊断。"""
+    sensitive = "raw-response-body sk-private-key https://private.example/v1"
+
+    class UnsafeIndexEmbedding:
+        @property
+        def index(self) -> int:
+            raise ValueError(sensitive)
+
+        @property
+        def embedding(self) -> list[float]:
+            return _axis_vector(0)
+
+    provider = OpenAIEmbeddingProvider(
+        client=FakeAsyncOpenAI([UnsafeIndexEmbedding()]),
+        model="embedding-test",
+    )
+
+    with pytest.raises(EmbeddingResponseError) as raised:
+        asyncio.run(provider.embed_texts(["不要泄露的输入正文"]))
+
+    assert sensitive not in str(raised.value)
+
+
+def test_embedding_property_failure_is_safely_mapped() -> None:
+    """读取恶意 embedding 属性失败时不得泄露原始响应诊断。"""
+    sensitive = "raw-response-body sk-private-key https://private.example/v1"
+
+    class UnsafeEmbedding:
+        index = 0
+
+        @property
+        def embedding(self) -> list[float]:
+            raise ValueError(sensitive)
+
+    provider = OpenAIEmbeddingProvider(
+        client=FakeAsyncOpenAI([UnsafeEmbedding()]),
+        model="embedding-test",
+    )
+
+    with pytest.raises(EmbeddingResponseError) as raised:
+        asyncio.run(provider.embed_texts(["不要泄露的输入正文"]))
+
+    assert sensitive not in str(raised.value)
+
+
 def test_provider_normalizes_large_finite_vectors_without_overflow() -> None:
     """有限且非零的超大分量仍应得到有效的单位向量。"""
     client = FakeAsyncOpenAI(
