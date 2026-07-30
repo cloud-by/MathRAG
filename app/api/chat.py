@@ -11,7 +11,9 @@ from openai import (
     AuthenticationError,
     RateLimitError,
 )
+from sqlalchemy.exc import SQLAlchemyError
 
+from app.modules.knowledge.errors import EmbeddingUnavailableError
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.rag_pipeline import chat_with_rag
 
@@ -40,9 +42,9 @@ def _history_to_dicts(history: List[Any]) -> List[Dict[str, str]]:
 
 
 @router.post("/chat", response_model=ChatResponse, summary="数学 RAG 问答")
-def chat(request: ChatRequest) -> ChatResponse:
+async def chat(request: ChatRequest) -> ChatResponse:
     try:
-        result = chat_with_rag(
+        result = await chat_with_rag(
             question=request.question,
             history=_history_to_dicts(request.history),
             top_k=request.top_k,
@@ -53,16 +55,22 @@ def chat(request: ChatRequest) -> ChatResponse:
 
         return ChatResponse(**result)
 
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="知识检索暂不可用。",
+        ) from exc
+
+    except EmbeddingUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="向量服务暂不可用。",
+        ) from exc
+
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
-        ) from exc
-
-    except FileNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"系统文件缺失：{exc}",
         ) from exc
 
     except AuthenticationError as exc:
@@ -117,5 +125,5 @@ def chat(request: ChatRequest) -> ChatResponse:
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"系统内部错误：{exc}",
+            detail="系统内部错误。",
         ) from exc

@@ -47,7 +47,7 @@ class ChatRequest(BaseModel):
 class ReferenceItem(BaseModel):
     rank: int = Field(..., description="检索排序名次，从 1 开始")
     score: float = Field(..., description="向量检索得分")
-    index: Optional[int] = Field(default=None, description="FAISS 内部索引位置")
+    index: Optional[int] = Field(default=None, description="旧版兼容字段；pgvector 路径为空")
 
     chunk_id: str = Field(..., description="chunk 唯一标识")
     source_id: str = Field(..., description="原始知识点 id")

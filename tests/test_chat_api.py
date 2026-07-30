@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+from types import SimpleNamespace
 from typing import Any, Dict, List
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.main import app
+from app.modules.knowledge.errors import EmbeddingUnavailableError
 
 
 client = TestClient(app)
@@ -15,7 +19,7 @@ def build_mock_reference(rank: int = 1) -> Dict[str, Any]:
     return {
         "rank": rank,
         "score": 0.987654,
-        "index": rank - 1,
+        "index": None,
         "chunk_id": f"k000{rank}_chunk_0",
         "source_id": f"k000{rank}",
         "category": "concept",
@@ -56,7 +60,7 @@ def build_mock_result() -> Dict[str, Any]:
 
 
 def test_chat_success_returns_complete_response(monkeypatch: pytest.MonkeyPatch) -> None:
-    def mock_chat_with_rag(question: str, history: List[Dict[str, str]] | None = None, top_k: int | None = None) -> Dict[str, Any]:
+    async def mock_chat_with_rag(question: str, history: List[Dict[str, str]] | None = None, top_k: int | None = None) -> Dict[str, Any]:
         assert question == "什么是代数式？"
         assert isinstance(history, list)
         assert top_k == 3
@@ -96,6 +100,7 @@ def test_chat_success_returns_complete_response(monkeypatch: pytest.MonkeyPatch)
     assert ref["category"] == "concept"
     assert ref["title"] == "测试知识点1"
     assert ref["difficulty"] == "easy"
+    assert ref["index"] is None
     assert ref["keywords"] == ["代数式", "表达式", "字母表示数"]
     assert ref["steps"] == ["步骤1：识别结构", "步骤2：理解含义"]
     assert "reasoning_content" in data
@@ -104,7 +109,7 @@ def test_chat_success_returns_complete_response(monkeypatch: pytest.MonkeyPatch)
 def test_chat_history_is_passed_as_plain_dicts(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: Dict[str, Any] = {}
 
-    def mock_chat_with_rag(question: str, history: List[Dict[str, str]] | None = None, top_k: int | None = None) -> Dict[str, Any]:
+    async def mock_chat_with_rag(question: str, history: List[Dict[str, str]] | None = None, top_k: int | None = None) -> Dict[str, Any]:
         captured["question"] = question
         captured["history"] = history
         captured["top_k"] = top_k
@@ -160,8 +165,54 @@ def test_chat_rejects_invalid_top_k() -> None:
     assert "detail" in data
 
 
+def test_openapi_describes_pgvector_and_legacy_index_contract() -> None:
+    document = client.get("/openapi.json").json()
+
+    assert document["info"]["description"] == (
+        "基于 FastAPI + PostgreSQL/pgvector + 大模型 API 的数学 RAG 问答原型系统"
+    )
+    index_schema = document["components"]["schemas"]["ReferenceItem"]["properties"][
+        "index"
+    ]
+    assert index_schema["description"] == "旧版兼容字段；pgvector 路径为空"
+
+
+def test_lifespan_preserves_app_error_while_attempting_both_cleanups(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app import main
+
+    events: list[str] = []
+
+    async def dispose_provider() -> None:
+        events.append("embedding")
+        raise RuntimeError("embedding cleanup failed")
+
+    async def dispose_database() -> None:
+        events.append("database")
+        raise RuntimeError("database cleanup failed")
+
+    monkeypatch.setattr(
+        main,
+        "settings",
+        SimpleNamespace(validate_runtime=lambda: events.append("validate")),
+    )
+    monkeypatch.setattr(main, "dispose_embedding_provider", dispose_provider)
+    monkeypatch.setattr(main, "dispose_engine", dispose_database)
+
+    async def exercise() -> None:
+        with pytest.raises(RuntimeError, match="application failed"):
+            async with main.lifespan(main.app):
+                events.append("body")
+                raise RuntimeError("application failed")
+
+    asyncio.run(exercise())
+
+    assert events == ["validate", "body", "embedding", "database"]
+
+
 def test_chat_returns_400_when_pipeline_raises_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    def mock_chat_with_rag(question: str, history: List[Dict[str, str]] | None = None, top_k: int | None = None) -> Dict[str, Any]:
+    async def mock_chat_with_rag(question: str, history: List[Dict[str, str]] | None = None, top_k: int | None = None) -> Dict[str, Any]:
         raise ValueError("question 不能为空")
 
     monkeypatch.setattr("app.api.chat.chat_with_rag", mock_chat_with_rag)
@@ -180,9 +231,42 @@ def test_chat_returns_400_when_pipeline_raises_value_error(monkeypatch: pytest.M
     assert data["detail"] == "question 不能为空"
 
 
-def test_chat_returns_500_when_file_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    def mock_chat_with_rag(question: str, history: List[Dict[str, str]] | None = None, top_k: int | None = None) -> Dict[str, Any]:
-        raise FileNotFoundError("data/index/faiss.index")
+def test_chat_returns_503_without_leaking_database_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def mock_chat_with_rag(question: str, history: List[Dict[str, str]] | None = None, top_k: int | None = None) -> Dict[str, Any]:
+        raise SQLAlchemyError("postgresql://user:password@host/database")
+
+    monkeypatch.setattr("app.api.chat.chat_with_rag", mock_chat_with_rag)
+
+    response = client.post(
+        "/api/chat",
+        json={"question": "测试问题", "history": [], "top_k": 3},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "知识检索暂不可用。"
+    assert "password" not in response.text
+
+
+def test_chat_returns_502_without_leaking_embedding_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def mock_chat_with_rag(question: str, history: List[Dict[str, str]] | None = None, top_k: int | None = None) -> Dict[str, Any]:
+        raise EmbeddingUnavailableError("https://provider.invalid?api_key=secret")
+
+    monkeypatch.setattr("app.api.chat.chat_with_rag", mock_chat_with_rag)
+
+    response = client.post(
+        "/api/chat",
+        json={"question": "测试问题", "history": [], "top_k": 3},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "向量服务暂不可用。"
+    assert "api_key" not in response.text
+    assert "secret" not in response.text
+
+
+def test_chat_catch_all_is_fixed_and_does_not_expose_faiss_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def mock_chat_with_rag(question: str, history: List[Dict[str, str]] | None = None, top_k: int | None = None) -> Dict[str, Any]:
+        raise FileNotFoundError("data/index/faiss.index?token=secret")
 
     monkeypatch.setattr("app.api.chat.chat_with_rag", mock_chat_with_rag)
 
@@ -197,11 +281,13 @@ def test_chat_returns_500_when_file_missing(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert response.status_code == 500
     data = response.json()
-    assert "系统文件缺失" in data["detail"]
+    assert data["detail"] == "系统内部错误。"
+    assert "faiss.index" not in response.text
+    assert "secret" not in response.text
 
 
 def test_chat_response_reference_schema_is_complete(monkeypatch: pytest.MonkeyPatch) -> None:
-    def mock_chat_with_rag(question: str, history: List[Dict[str, str]] | None = None, top_k: int | None = None) -> Dict[str, Any]:
+    async def mock_chat_with_rag(question: str, history: List[Dict[str, str]] | None = None, top_k: int | None = None) -> Dict[str, Any]:
         result = build_mock_result()
         result["references"] = [build_mock_reference(1)]
         return result

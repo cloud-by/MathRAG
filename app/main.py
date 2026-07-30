@@ -20,21 +20,33 @@ from app.schemas.chat import HealthResponse
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    application_error: BaseException | None = None
     try:
         settings.validate_runtime()
         yield
+    except BaseException as exc:
+        application_error = exc
+        raise
     finally:
+        cleanup_error: BaseException | None = None
         try:
             await dispose_embedding_provider()
-        finally:
+        except BaseException as exc:
+            cleanup_error = exc
+        try:
             await dispose_engine()
+        except BaseException as exc:
+            if cleanup_error is None:
+                cleanup_error = exc
+        if application_error is None and cleanup_error is not None:
+            raise cleanup_error
 
 
 def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME,
         version="0.1.0",
-        description="基于 FastAPI + FAISS + 大模型 API 的数学 RAG 问答原型系统",
+        description="基于 FastAPI + PostgreSQL/pgvector + 大模型 API 的数学 RAG 问答原型系统",
         lifespan=lifespan,
     )
     app.add_middleware(RequestIdMiddleware)

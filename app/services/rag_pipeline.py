@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Dict, List, Sequence
 
 from app.core.config import settings
-from app.services.agentic_rag import get_query_planner
+from app.modules.knowledge.search_service import (
+    KnowledgeSearchService,
+    build_knowledge_search_service,
+)
+from app.services.agentic_rag import QueryPlanner, get_query_planner
 from app.services.llm_service import chat_json
-from app.services.retriever import retrieve
 from app.utils.prompt_builder import build_chat_messages
 
 
@@ -16,10 +20,18 @@ class RAGConfig:
 
 
 class RAGPipeline:
-    def __init__(self, config: RAGConfig | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        knowledge_search: KnowledgeSearchService,
+        planner: QueryPlanner | None = None,
+        config: RAGConfig | None = None,
+    ) -> None:
+        self._knowledge_search = knowledge_search
+        self._planner = planner or get_query_planner()
         self.config = config or RAGConfig()
 
-    def chat(
+    async def chat(
         self,
         question: str,
         history: Sequence[Dict[str, Any]] | None = None,
@@ -29,27 +41,29 @@ class RAGPipeline:
         if not question:
             raise ValueError("question 不能为空")
 
-        k = top_k or self.config.default_top_k
-        if k <= 0:
-            raise ValueError("top_k 必须大于 0")
+        k = self.config.default_top_k if top_k is None else top_k
+        if type(k) is not int or not 1 <= k <= 10:
+            raise ValueError("top_k 必须是 1 到 10 的整数")
 
-        planner = get_query_planner()
-        plan = planner.create_plan(question=question, history=history)
-
-        references = self._retrieve_with_plan(
+        plan = await asyncio.to_thread(
+            self._planner.create_plan,
             question=question,
-            retrieval_queries=plan.retrieval_queries,
-            top_k=k,
+            history=history,
         )
-        normalized_references = self._normalize_references(references)
+        queries = self._normalize_queries(question, plan.retrieval_queries)
+        hits = await self._knowledge_search.search(queries, top_k=k)
+        references = [
+            hit.to_reference(rank=rank)
+            for rank, hit in enumerate(hits, start=1)
+        ]
 
         messages = build_chat_messages(
             question=question,
-            references=normalized_references,
+            references=references,
             history=history,
         )
-        llm_result = chat_json(messages=messages)
-        parsed = self._normalize_result(llm_result.data, normalized_references, question)
+        llm_result = await asyncio.to_thread(chat_json, messages=messages)
+        parsed = self._normalize_result(llm_result.data, references, question)
 
         result: Dict[str, Any] = {
             "question": question,
@@ -57,68 +71,29 @@ class RAGPipeline:
             "steps": parsed["steps"],
             "used_knowledge": parsed["used_knowledge"],
             "related_questions": parsed["related_questions"],
-            "references": normalized_references,
+            "references": references,
             "agentic_plan": {
                 "strategy": plan.strategy,
                 "retrieval_queries": plan.retrieval_queries,
             },
         }
-
-
         return result
 
     @staticmethod
-    def _merge_references(references: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        merged: Dict[str, Dict[str, Any]] = {}
-
-        for ref in references:
-            if not isinstance(ref, dict):
-                continue
-
-            chunk_id = str(ref.get("chunk_id", "")).strip()
-            key = chunk_id or f"index::{ref.get('index')}"
-            current_score = float(ref.get("score", 0.0) or 0.0)
-
-            existing = merged.get(key)
-            if existing is None:
-                merged[key] = dict(ref)
-                continue
-
-            existing_score = float(existing.get("score", 0.0) or 0.0)
-            if current_score > existing_score:
-                merged[key] = dict(ref)
-
-        ranked = sorted(merged.values(), key=lambda item: float(item.get("score", 0.0) or 0.0), reverse=True)
-
-        for i, ref in enumerate(ranked, start=1):
-            ref["rank"] = i
-
-        return ranked
-
-    def _retrieve_with_plan(
-        self,
+    def _normalize_queries(
         question: str,
         retrieval_queries: Sequence[str],
-        top_k: int,
-    ) -> List[Dict[str, Any]]:
-        queries: List[str] = []
-        seen = set()
-
-        for q in retrieval_queries:
-            text = str(q).strip()
+    ) -> List[str]:
+        queries = [question]
+        seen = {question}
+        for query in retrieval_queries:
+            text = " ".join(str(query).split()).strip()
             if text and text not in seen:
                 queries.append(text)
                 seen.add(text)
-
-        if question not in seen:
-            queries.insert(0, question)
-
-        combined: List[Dict[str, Any]] = []
-        for q in queries:
-            combined.extend(retrieve(question=q, top_k=top_k))
-
-        merged = self._merge_references(combined)
-        return merged[:top_k]
+            if len(queries) >= 4:
+                break
+        return queries
 
     @staticmethod
     def _normalize_str_list(value: Any, default: List[str] | None = None) -> List[str]:
@@ -287,13 +262,19 @@ _rag_pipeline: RAGPipeline | None = None
 def get_rag_pipeline() -> RAGPipeline:
     global _rag_pipeline
     if _rag_pipeline is None:
-        _rag_pipeline = RAGPipeline()
+        _rag_pipeline = RAGPipeline(
+            knowledge_search=build_knowledge_search_service(),
+        )
     return _rag_pipeline
 
 
-def chat_with_rag(
+async def chat_with_rag(
     question: str,
     history: Sequence[Dict[str, Any]] | None = None,
     top_k: int | None = None,
 ) -> Dict[str, Any]:
-    return get_rag_pipeline().chat(question=question, history=history, top_k=top_k)
+    return await get_rag_pipeline().chat(
+        question=question,
+        history=history,
+        top_k=top_k,
+    )
