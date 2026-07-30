@@ -16,6 +16,25 @@ DISTANCE_EPSILON = 1e-9
 
 
 @dataclass(frozen=True)
+class ReindexCandidate:
+    """脱离 ORM 会话的待重建分块文本快照。"""
+
+    chunk_id: UUID
+    item_id: UUID
+    retrieval_text: str
+
+
+@dataclass(frozen=True)
+class EmbeddingUpdate:
+    """携带检索文本 CAS 条件的向量写回载荷。"""
+
+    chunk_id: UUID
+    item_id: UUID
+    expected_retrieval_text: str
+    vector: tuple[float, ...]
+
+
+@dataclass(frozen=True)
 class KnowledgeSearchHit:
     """不依赖 ORM 会话生命周期的单条知识检索结果。"""
 
