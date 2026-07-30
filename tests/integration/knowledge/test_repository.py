@@ -39,7 +39,7 @@ def make_item(legacy_id: str | None, title: str) -> KnowledgeItem:
             chunk_index=0,
             retrieval_text=f"{title} 检索文本",
             answer_context=f"{title} 回答上下文",
-            status="ready",
+            status="pending",
         )
     )
     return item
