@@ -35,7 +35,7 @@ def make_hit(
     return KnowledgeSearchHit(
         database_chunk_id=database_chunk_id,
         legacy_chunk_id=legacy_chunk_id,
-        source_id="legacy-source-a",
+        legacy_source_id="legacy-source-a",
         category="algebra",
         title="一元一次方程",
         keywords=("方程", "移项"),
@@ -55,7 +55,7 @@ def make_row() -> tuple[KnowledgeChunk, KnowledgeItem, float]:
     """构造与 M2 导入结果一致的 ORM 行。"""
     item = KnowledgeItem(
         id=UUID("10000000-0000-0000-0000-000000000001"),
-        legacy_id="source-from-model",
+        legacy_id="source-from-metadata",
         category="model-category",
         title="模型标题",
         keywords=["模型关键词"],
@@ -179,7 +179,7 @@ def test_search_hit_from_row_uses_model_columns_and_removes_audit_metadata() -> 
 
     assert hit.database_chunk_id == CHUNK_A
     assert hit.legacy_chunk_id == "legacy-chunk-from-metadata"
-    assert hit.source_id == "source-from-model"
+    assert hit.legacy_source_id == "source-from-metadata"
     assert hit.category == "model-category"
     assert hit.title == "模型标题"
     assert hit.keywords == ("模型关键词",)
@@ -202,6 +202,24 @@ def test_search_hit_from_row_uses_model_columns_and_removes_audit_metadata() -> 
         "nested": {"labels": ["初始"]},
     }
     assert hit.distance == pytest.approx(0.125)
+
+
+def test_search_hit_from_row_rejects_conflicting_legacy_source_identity_safely() -> None:
+    """模型列与审计 metadata 的旧来源 ID 不一致时不得静默选择任一值。"""
+    chunk, item, distance = make_row()
+    item.legacy_id = "conflicting-model-source"
+    item.content = "https://example.invalid/private?token=secret"
+    chunk.metadata_["secret"] = "metadata-secret"
+
+    with pytest.raises(KnowledgeSearchError) as captured:
+        search_hit_from_row(chunk, item, distance)
+
+    message = str(captured.value)
+    assert str(CHUNK_A) in message
+    assert "conflicting-model-source" not in message
+    assert "source-from-metadata" not in message
+    assert "metadata-secret" not in message
+    assert "example.invalid" not in message
 
 
 @pytest.mark.parametrize(

@@ -162,6 +162,10 @@ async def exercise_vector_search(database_url: str) -> None:
                 "public-ready-a-chunk-0",
                 "public-ready-b-chunk-0",
             ]
+            assert [hit.legacy_source_id for hit in hits] == [
+                "public-ready-a",
+                "public-ready-b",
+            ]
             assert hits[0].distance == pytest.approx(0.0, abs=1e-7)
             assert hits[1].distance == pytest.approx(0.2, abs=1e-6)
             assert [hit.metadata for hit in hits] == [

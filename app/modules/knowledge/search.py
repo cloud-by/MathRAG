@@ -18,7 +18,7 @@ class KnowledgeSearchHit:
 
     database_chunk_id: UUID
     legacy_chunk_id: str
-    source_id: str
+    legacy_source_id: str
     category: str
     title: str
     keywords: tuple[str, ...]
@@ -53,8 +53,8 @@ class KnowledgeSearchHit:
             raise _row_error(chunk_id, "source_line 类型无效")
         if type(self.legacy_chunk_id) is not str or not self.legacy_chunk_id:
             raise _row_error(chunk_id, "legacy_chunk_id 无效")
-        if type(self.source_id) is not str or not self.source_id:
-            raise _row_error(chunk_id, "source_id 无效")
+        if type(self.legacy_source_id) is not str or not self.legacy_source_id:
+            raise _row_error(chunk_id, "legacy_source_id 无效")
 
         try:
             distance = float(self.distance)
@@ -84,7 +84,7 @@ class KnowledgeSearchHit:
             "score": self.score,
             "index": None,
             "chunk_id": self.legacy_chunk_id,
-            "source_id": self.source_id,
+            "source_id": self.legacy_source_id,
             "category": self.category,
             "title": self.title,
             "keywords": list(self.keywords),
@@ -157,11 +157,10 @@ def search_hit_from_row(
         raise _row_error(chunk_id, "legacy_source_id 无效")
 
     model_source_id = getattr(item, "legacy_id", None)
-    if model_source_id is not None and (
-        type(model_source_id) is not str or not model_source_id
-    ):
+    if model_source_id is not None and type(model_source_id) is not str:
         raise _row_error(chunk_id, "模型 legacy_id 无效")
-    source_id = model_source_id or metadata_source_id
+    if model_source_id and model_source_id != metadata_source_id:
+        raise _row_error(chunk_id, "legacy_source_id 与模型 legacy_id 不一致")
 
     keywords = _string_list_from_model(
         getattr(item, "keywords", None),
@@ -179,7 +178,7 @@ def search_hit_from_row(
     return KnowledgeSearchHit(
         database_chunk_id=chunk_id,
         legacy_chunk_id=legacy_chunk_id,
-        source_id=source_id,
+        legacy_source_id=metadata_source_id,
         category=_string_from_model(item, "category", chunk_id),
         title=_string_from_model(item, "title", chunk_id),
         keywords=keywords,
