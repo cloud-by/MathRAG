@@ -225,6 +225,7 @@ def test_conflicting_existing_legacy_item_rolls_back_transaction() -> None:
         lambda item: item.chunks.append(item.chunks[0]),
         lambda item: item.chunks[0].metadata_.pop("legacy_chunk_id"),
         lambda item: item.chunks[0].metadata_.update({"source_line": "7"}),
+        lambda item: setattr(item.chunks[0], "chunk_index", "0"),
     ],
 )
 def test_bundle_from_malformed_model_raises_domain_error(mutate: object) -> None:

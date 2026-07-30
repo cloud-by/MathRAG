@@ -85,6 +85,8 @@ def bundle_from_model(item: KnowledgeItem) -> LegacyKnowledgeBundle:
             raise TypeError("legacy_source_id 必须是字符串")
         if type(source_line) is not int:
             raise TypeError("source_line 必须是整数")
+        if type(chunk.chunk_index) is not int:
+            raise TypeError("chunk_index 必须是整数")
 
         legacy_item = LegacyKnowledgeItemInput(
             id=legacy_id,
