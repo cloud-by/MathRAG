@@ -28,6 +28,14 @@ body {
   margin: 0;
 }
 
+#app {
+  min-height: 100vh;
+}
+
+a {
+  color: inherit;
+}
+
 button,
 input,
 textarea,
@@ -39,6 +47,11 @@ select {
 button,
 select {
   cursor: pointer;
+}
+
+button:disabled,
+select:disabled {
+  cursor: not-allowed;
 }
 
 :focus-visible {

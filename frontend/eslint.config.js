@@ -12,6 +12,14 @@ export default tseslint.config(
   {
     files: ['**/*.vue'],
     languageOptions: {
+      globals: {
+        document: 'readonly',
+        HTMLButtonElement: 'readonly',
+        HTMLElement: 'readonly',
+        KeyboardEvent: 'readonly',
+        Node: 'readonly',
+        PointerEvent: 'readonly',
+      },
       parserOptions: {
         parser: tseslint.parser,
       },
