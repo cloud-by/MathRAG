@@ -8,6 +8,32 @@ export interface ApiRequestOptions<TBody = unknown> {
   requestId?: string
 }
 
+export interface UnauthorizedEvent {
+  path: `/api/${string}`
+  error: ApiError
+}
+
+export type UnauthorizedListener = (event: UnauthorizedEvent) => void
+
+const unauthorizedListeners = new Set<UnauthorizedListener>()
+
+export function subscribeUnauthorized(
+  listener: UnauthorizedListener,
+): () => void {
+  unauthorizedListeners.add(listener)
+  return () => unauthorizedListeners.delete(listener)
+}
+
+function notifyUnauthorized(event: UnauthorizedEvent): void {
+  for (const listener of unauthorizedListeners) {
+    try {
+      listener(event)
+    } catch {
+      continue
+    }
+  }
+}
+
 function createRequestId(requestId?: string): string {
   const supplied = requestId?.trim()
   return supplied || crypto.randomUUID()
@@ -109,7 +135,11 @@ export async function apiRequest<TResponse, TBody = unknown>(
 
   const payload = await readResponseBody(response)
   if (!response.ok) {
-    throw toApiError(response, payload, requestId)
+    const error = toApiError(response, payload, requestId)
+    if (response.status === 401) {
+      notifyUnauthorized({ path, error })
+    }
+    throw error
   }
   return payload as TResponse
 }

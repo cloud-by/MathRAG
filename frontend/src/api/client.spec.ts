@@ -10,7 +10,7 @@ import {
   vi,
 } from 'vitest'
 
-import { apiRequest } from './client'
+import { apiRequest, subscribeUnauthorized } from './client'
 import { ApiError } from './errors'
 
 const server = setupServer()
@@ -163,6 +163,41 @@ describe('apiRequest', () => {
       status: 409,
       details: { field: 'question' },
     } satisfies Partial<ApiError>)
+  })
+
+  it('notifies authentication consumers when any endpoint returns 401', async () => {
+    const listener = vi.fn()
+    const unsubscribe = subscribeUnauthorized(listener)
+    server.use(
+      http.get('http://localhost:3000/api/v1/conversations', () => {
+        return HttpResponse.json(
+          {
+            error: {
+              code: 'AUTH_REQUIRED',
+              message: '登录状态已失效。',
+              request_id: 'request-expired',
+              details: null,
+            },
+          },
+          { status: 401 },
+        )
+      }),
+    )
+
+    try {
+      await expect(apiRequest('/api/v1/conversations')).rejects.toMatchObject({
+        status: 401,
+      })
+      expect(listener).toHaveBeenCalledWith({
+        path: '/api/v1/conversations',
+        error: expect.objectContaining({
+          code: 'AUTH_REQUIRED',
+          status: 401,
+        }),
+      })
+    } finally {
+      unsubscribe()
+    }
   })
 
   it('preserves AbortError for caller state machines', async () => {
