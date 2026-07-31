@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.chat import router as chat_router
 from app.api.knowledge import router as knowledge_router
 from app.core.config import settings
+from app.core.exception_handlers import install_exception_handlers
 from app.core.middleware import RequestIdMiddleware
 from app.infrastructure.database.session import dispose_engine
 from app.infrastructure.embedding.provider import dispose_embedding_provider
@@ -51,10 +52,11 @@ def create_app() -> FastAPI:
         description="基于 FastAPI + PostgreSQL/pgvector + 大模型 API 的数学 RAG 问答原型系统",
         lifespan=lifespan,
     )
+    install_exception_handlers(app)
     app.add_middleware(RequestIdMiddleware)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=list(settings.ALLOWED_ORIGINS),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

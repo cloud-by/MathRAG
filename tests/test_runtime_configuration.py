@@ -49,9 +49,23 @@ def test_run_main_uses_debug_setting_for_reload(monkeypatch) -> None:
 def test_env_example_contains_runtime_settings_and_only_fake_secrets() -> None:
     values = _parse_env_example(PROJECT_ROOT / ".env.example")
 
-    required_names = {"APP_NAME", "APP_HOST", "APP_PORT", "DEBUG", "TOP_K"}
+    required_names = {
+        "APP_NAME",
+        "APP_HOST",
+        "APP_PORT",
+        "DEBUG",
+        "TOP_K",
+        "SESSION_SECRET",
+        "SESSION_TTL_SECONDS",
+        "ALLOWED_ORIGINS",
+    }
     assert required_names <= values.keys()
     assert "APP_DEBUG" not in values
+    assert values["SESSION_SECRET"] == ""
+    assert values["SESSION_TTL_SECONDS"] == "604800"
+    assert values["ALLOWED_ORIGINS"] == (
+        "http://127.0.0.1:8000,http://localhost:8000"
+    )
 
     sensitive_names = {
         name

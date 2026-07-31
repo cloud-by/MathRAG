@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -11,6 +11,11 @@ from app.core.errors import ConfigurationError
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 ENV_PATH = PROJECT_ROOT / ".env"
+DEVELOPMENT_ALLOWED_ORIGINS = (
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+)
+DEVELOPMENT_SESSION_SECRET = "mathrag-development-only-session-secret"
 
 # 允许在项目根目录存在 .env 时自动加载
 load_dotenv(ENV_PATH if ENV_PATH.exists() else None)
@@ -22,6 +27,12 @@ def _to_bool(value: str | None, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _to_origins(value: str | None) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    return tuple(origin.strip() for origin in value.split(",") if origin.strip())
+
+
 @dataclass(frozen=True)
 class Settings:
     APP_NAME: str = os.getenv("APP_NAME", "MathRAG MVP")
@@ -30,6 +41,12 @@ class Settings:
     APP_ENV: str = os.getenv("APP_ENV", "development").strip().lower()
     APP_WORKERS: int = int(os.getenv("APP_WORKERS", "1"))
     DEBUG: bool = _to_bool(os.getenv("DEBUG"), True)
+
+    SESSION_SECRET: str = os.getenv("SESSION_SECRET", "")
+    SESSION_TTL_SECONDS: int = int(os.getenv("SESSION_TTL_SECONDS", "604800"))
+    ALLOWED_ORIGINS: tuple[str, ...] = field(
+        default_factory=lambda: _to_origins(os.getenv("ALLOWED_ORIGINS"))
+    )
 
     DATABASE_URL: str = os.getenv("DATABASE_URL", "").strip()
     DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "5"))
@@ -58,12 +75,25 @@ class Settings:
     def __post_init__(self) -> None:
         object.__setattr__(self, "APP_ENV", self.APP_ENV.strip().lower())
         object.__setattr__(self, "DATABASE_URL", self.DATABASE_URL.strip())
+        session_secret = self.SESSION_SECRET.strip()
+        origins = tuple(
+            origin.strip()
+            for origin in self.ALLOWED_ORIGINS
+            if origin.strip()
+        )
+        if self.APP_ENV == "development":
+            # 仅供本地开发启动；部署环境必须显式提供强密钥。
+            session_secret = session_secret or DEVELOPMENT_SESSION_SECRET
+            origins = origins or DEVELOPMENT_ALLOWED_ORIGINS
+        object.__setattr__(self, "SESSION_SECRET", session_secret)
+        object.__setattr__(self, "ALLOWED_ORIGINS", origins)
 
         positive_settings = (
             ("APP_PORT", self.APP_PORT),
             ("APP_WORKERS", self.APP_WORKERS),
             ("DB_POOL_SIZE", self.DB_POOL_SIZE),
             ("DB_POOL_TIMEOUT", self.DB_POOL_TIMEOUT),
+            ("SESSION_TTL_SECONDS", self.SESSION_TTL_SECONDS),
         )
         for field_name, value in positive_settings:
             if value <= 0:
@@ -77,6 +107,29 @@ class Settings:
             raise ConfigurationError(
                 f"{self.APP_ENV} 环境必须配置 DATABASE_URL"
             )
+        if "*" in self.ALLOWED_ORIGINS:
+            raise ConfigurationError("ALLOWED_ORIGINS 不得包含通配符 *")
+        if self.APP_ENV in {"staging", "production"}:
+            if len(self.SESSION_SECRET.encode("utf-8")) < 32:
+                raise ConfigurationError(
+                    f"{self.APP_ENV} 环境的 SESSION_SECRET 必须至少包含 32 个 UTF-8 字节"
+                )
+            if not self.ALLOWED_ORIGINS:
+                raise ConfigurationError(
+                    f"{self.APP_ENV} 环境必须配置 ALLOWED_ORIGINS"
+                )
+
+    @property
+    def session_cookie_name(self) -> str:
+        if self.APP_ENV == "development":
+            return "mathrag_session"
+        return "__Host-mathrag_session"
+
+    @property
+    def csrf_cookie_name(self) -> str:
+        if self.APP_ENV == "development":
+            return "mathrag_csrf"
+        return "__Host-mathrag_csrf"
 
     def require_database_url(self) -> str:
         if not self.DATABASE_URL:
