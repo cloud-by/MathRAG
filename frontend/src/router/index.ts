@@ -33,13 +33,15 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/conversations',
     name: 'conversations',
-    component: EMPTY_ROUTE,
+    component: () =>
+      import('../features/conversations/ConversationListPage.vue'),
     meta: { requiresAuth: true, title: '会话记录' },
   },
   {
     path: '/conversations/:id',
     name: 'conversation',
-    component: EMPTY_ROUTE,
+    component: () =>
+      import('../features/conversations/ConversationHistoryPage.vue'),
     meta: { requiresAuth: true, title: '会话详情' },
   },
   {
