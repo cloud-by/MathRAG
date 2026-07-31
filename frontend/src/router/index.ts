@@ -64,13 +64,13 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/documents',
     name: 'documents',
-    component: EMPTY_ROUTE,
+    component: () => import('../features/documents/DocumentsPage.vue'),
     meta: { requiresAdmin: true, requiresAuth: true, title: '文档管理' },
   },
   {
     path: '/jobs',
     name: 'jobs',
-    component: EMPTY_ROUTE,
+    component: () => import('../features/jobs/JobsPage.vue'),
     meta: { requiresAdmin: true, requiresAuth: true, title: '摄取任务' },
   },
 ]
