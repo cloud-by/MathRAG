@@ -3,11 +3,17 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
-
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from app.modules.knowledge.rendering import build_answer_context, build_retrieval_text
+
+
 DEFAULT_INPUT = PROJECT_ROOT / "data" / "raw" / "math_knowledge_seed.jsonl"
 DEFAULT_OUTPUT = PROJECT_ROOT / "data" / "processed" / "kb_chunks.jsonl"
 
@@ -153,55 +159,6 @@ def validate_record(record: Dict[str, Any], line_no: int) -> Tuple[bool, List[st
         errors.append("字段 id 格式建议为 k0001 这类形式")
 
     return len(errors) == 0, errors
-
-
-def difficulty_to_zh(difficulty: str) -> str:
-    mapping = {
-        "easy": "简单",
-        "medium": "中等",
-        "hard": "困难",
-    }
-    return mapping.get(difficulty, difficulty)
-
-
-def build_retrieval_text(item: Dict[str, Any]) -> str:
-    parts: List[str] = []
-
-    parts.append(f"知识点类别：{item['category']}")
-    parts.append(f"知识点标题：{item['title']}")
-
-    if item["keywords"]:
-        parts.append("关键词：" + "，".join(item["keywords"]))
-
-    parts.append("核心内容：" + item["content"])
-
-    if item["example"]:
-        parts.append("例题示例：" + item["example"])
-
-    if item["steps"]:
-        parts.append("理解/解题步骤：" + "；".join(item["steps"]))
-
-    parts.append(f"难度：{difficulty_to_zh(item['difficulty'])}")
-
-    return "\n".join(parts)
-
-
-def build_answer_context(item: Dict[str, Any]) -> str:
-    lines: List[str] = [
-        f"【{item['title']}】",
-        f"类别：{item['category']}",
-        f"难度：{difficulty_to_zh(item['difficulty'])}",
-        item["content"],
-    ]
-
-    if item["example"]:
-        lines.append(f"示例：{item['example']}")
-
-    if item["steps"]:
-        lines.append("参考步骤：")
-        lines.extend(item["steps"])
-
-    return "\n".join(lines)
 
 
 def normalize_record(raw: Dict[str, Any], line_no: int) -> Dict[str, Any]:

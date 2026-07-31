@@ -1,5 +1,20 @@
 """旧知识迁移的领域异常。"""
 
+from __future__ import annotations
+
+from app.core.errors import AppError
+
+
+class KnowledgeNotFoundError(AppError):
+    """知识条目不存在或对当前身份不可见。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="KNOWLEDGE_NOT_FOUND",
+            message="知识条目不存在。",
+            status_code=404,
+        )
+
 
 class KnowledgeSearchError(Exception):
     """知识向量化或检索失败。"""
