@@ -6,7 +6,7 @@
 
 **架构：** 前端采用 Vite、Vue Router、Composition API 和按功能拆分的服务端状态；API 类型由 FastAPI OpenAPI 生成，所有请求统一经过同源客户端。生产镜像通过 Node 构建阶段生成 `frontend/dist`，Python 运行阶段只携带静态产物。M6 继续使用现有单进程 `BackgroundTasks` 摄取模型；Redis、Celery、多 worker、OCR 和生产限流属于 M7。
 
-**技术栈：** Vue 3.5、TypeScript 7、Vite 8、Vue Router 5、KaTeX、Lucide Vue、Vitest、Vue Test Utils、Testing Library、MSW、Playwright、FastAPI、pytest、Docker Compose。
+**技术栈：** Vue 3.5、TypeScript 5.9、Vite 8、Vue Router 5、KaTeX、Lucide Vue、Vitest、Vue Test Utils、Testing Library、MSW、Playwright、FastAPI、pytest、Docker Compose。
 
 ---
 
@@ -135,7 +135,7 @@ npm.cmd test -- --run src/app/App.spec.ts src/styles/tokens.spec.ts
     "msw": "2.15.0",
     "openapi-typescript": "7.13.0",
     "prettier": "3.9.6",
-    "typescript": "7.0.2",
+    "typescript": "5.9.3",
     "typescript-eslint": "8.65.0",
     "vite": "8.2.0",
     "vitest": "4.1.10",

@@ -12,6 +12,10 @@ __pycache__/
 .idea/
 .pdfdeps/
 .pdf_page_images/
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/*.tsbuildinfo
 tests/
 *.log
 *.bak

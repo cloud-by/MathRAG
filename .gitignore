@@ -13,6 +13,12 @@ __pycache__/
 .pdfdeps/
 .pdf_page_images/
 
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/*.tsbuildinfo
+
 # Local data/import artifacts
 data/data_lake/
 data/uploads/
