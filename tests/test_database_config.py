@@ -6,6 +6,12 @@ from app.core.config import Settings
 from app.core.errors import ConfigurationError
 
 
+DEPLOYED_SECURITY = {
+    "SESSION_SECRET": "x" * 32,
+    "ALLOWED_ORIGINS": ("https://mathrag.example",),
+}
+
+
 def test_db_pool_size_must_be_positive() -> None:
     with pytest.raises(ValueError, match="DB_POOL_SIZE"):
         Settings(DB_POOL_SIZE=0)
@@ -13,7 +19,11 @@ def test_db_pool_size_must_be_positive() -> None:
 
 @pytest.mark.parametrize("app_env", ["staging", "production"])
 def test_deployed_environments_require_database_url_at_runtime(app_env: str) -> None:
-    settings = Settings(APP_ENV=app_env, DATABASE_URL="")
+    settings = Settings(
+        APP_ENV=app_env,
+        DATABASE_URL="",
+        **DEPLOYED_SECURITY,
+    )
 
     with pytest.raises(ConfigurationError, match="DATABASE_URL"):
         settings.validate_runtime()
@@ -27,7 +37,8 @@ def test_development_allows_empty_database_url_at_runtime() -> None:
 
 @pytest.mark.parametrize("app_env", ["development", "staging", "production", "test"])
 def test_require_database_url_rejects_empty_value_in_every_environment(app_env: str) -> None:
-    settings = Settings(APP_ENV=app_env, DATABASE_URL="")
+    security = DEPLOYED_SECURITY if app_env in {"staging", "production"} else {}
+    settings = Settings(APP_ENV=app_env, DATABASE_URL="", **security)
 
     with pytest.raises(ConfigurationError, match="DATABASE_URL"):
         settings.require_database_url()
@@ -54,6 +65,7 @@ def test_settings_normalize_app_env_and_database_url() -> None:
     settings = Settings(
         APP_ENV=" Production ",
         DATABASE_URL=" postgresql+asyncpg://user:password@localhost/database ",
+        **DEPLOYED_SECURITY,
     )
 
     assert settings.APP_ENV == "production"

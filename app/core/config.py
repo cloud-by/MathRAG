@@ -102,11 +102,9 @@ class Settings:
         if self.DB_MAX_OVERFLOW < 0:
             raise ValueError("DB_MAX_OVERFLOW 必须大于等于 0")
 
-    def validate_runtime(self) -> None:
-        if self.APP_ENV in {"staging", "production"} and not self.DATABASE_URL:
-            raise ConfigurationError(
-                f"{self.APP_ENV} 环境必须配置 DATABASE_URL"
-            )
+        self._validate_security_config()
+
+    def _validate_security_config(self) -> None:
         if "*" in self.ALLOWED_ORIGINS:
             raise ConfigurationError("ALLOWED_ORIGINS 不得包含通配符 *")
         if self.APP_ENV in {"staging", "production"}:
@@ -118,6 +116,13 @@ class Settings:
                 raise ConfigurationError(
                     f"{self.APP_ENV} 环境必须配置 ALLOWED_ORIGINS"
                 )
+
+    def validate_runtime(self) -> None:
+        if self.APP_ENV in {"staging", "production"} and not self.DATABASE_URL:
+            raise ConfigurationError(
+                f"{self.APP_ENV} 环境必须配置 DATABASE_URL"
+            )
+        self._validate_security_config()
 
     @property
     def session_cookie_name(self) -> str:

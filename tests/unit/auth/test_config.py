@@ -27,13 +27,11 @@ def test_deployed_environments_reject_empty_or_short_session_secret(
     app_env: str,
     session_secret: str,
 ) -> None:
-    configured = _deployed_settings(
-        APP_ENV=app_env,
-        SESSION_SECRET=session_secret,
-    )
-
     with pytest.raises(ConfigurationError, match="SESSION_SECRET"):
-        configured.validate_runtime()
+        _deployed_settings(
+            APP_ENV=app_env,
+            SESSION_SECRET=session_secret,
+        )
 
 
 def test_session_secret_minimum_is_measured_in_utf8_bytes() -> None:
@@ -48,13 +46,11 @@ def test_deployed_environments_require_explicit_non_wildcard_origins(
     app_env: str,
     allowed_origins: tuple[str, ...],
 ) -> None:
-    configured = _deployed_settings(
-        APP_ENV=app_env,
-        ALLOWED_ORIGINS=allowed_origins,
-    )
-
     with pytest.raises(ConfigurationError, match="ALLOWED_ORIGINS"):
-        configured.validate_runtime()
+        _deployed_settings(
+            APP_ENV=app_env,
+            ALLOWED_ORIGINS=allowed_origins,
+        )
 
 
 def test_session_ttl_must_be_positive() -> None:
@@ -77,10 +73,8 @@ def test_development_uses_local_origins_by_default() -> None:
 
 @pytest.mark.parametrize("app_env", ["development", "test"])
 def test_wildcard_origin_is_rejected_in_every_environment(app_env: str) -> None:
-    configured = Settings(APP_ENV=app_env, ALLOWED_ORIGINS=("*",))
-
     with pytest.raises(ConfigurationError, match="ALLOWED_ORIGINS"):
-        configured.validate_runtime()
+        Settings(APP_ENV=app_env, ALLOWED_ORIGINS=("*",))
 
 
 @pytest.mark.parametrize(
@@ -97,7 +91,11 @@ def test_cookie_names_are_derived_from_environment(
     session_cookie_name: str,
     csrf_cookie_name: str,
 ) -> None:
-    configured = Settings(APP_ENV=app_env)
+    configured = Settings(
+        APP_ENV=app_env,
+        SESSION_SECRET="x" * 32,
+        ALLOWED_ORIGINS=DEPLOYED_ORIGINS,
+    )
 
     assert configured.session_cookie_name == session_cookie_name
     assert configured.csrf_cookie_name == csrf_cookie_name
