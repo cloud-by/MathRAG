@@ -72,6 +72,7 @@ class RAGExecution:
                     chunk_id=hit.database_chunk_id,
                     score=hit.score,
                     snapshot={
+                        "chunk_id": hit.legacy_chunk_id,
                         "source_id": hit.legacy_source_id,
                         "category": hit.category,
                         "title": hit.title,
@@ -82,6 +83,7 @@ class RAGExecution:
                         "difficulty": hit.difficulty,
                         "answer_context": hit.answer_context,
                         "retrieval_text": hit.retrieval_text,
+                        "source_line": hit.source_line,
                         "metadata": deepcopy(hit.metadata),
                     },
                 )

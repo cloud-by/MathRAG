@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -423,6 +424,35 @@ def test_runtime_install_instructions_use_the_compiled_lock() -> None:
     combined = "\n".join(path.read_text(encoding="utf-8") for path in sources)
 
     assert "pip install -r requirements.txt" not in combined
+
+
+def test_persistent_rag_executor_is_outside_database_session_context() -> None:
+    from app.modules.rag.service import ChatPersistenceService
+
+    source = textwrap.dedent(inspect.getsource(ChatPersistenceService.chat))
+    tree = ast.parse(source)
+    parent_by_child = {
+        child: parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+    execute_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Await)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Attribute)
+        and node.value.func.attr == "execute"
+    ]
+    assert len(execute_calls) == 1
+    current = parent_by_child.get(execute_calls[0])
+    while current is not None:
+        assert not isinstance(current, ast.AsyncWith)
+        current = parent_by_child.get(current)
+
+    repository_source = _read("app/modules/rag/repository.py")
+    for forbidden in (".commit(", ".rollback(", ".close("):
+        assert forbidden not in repository_source
 
 
 def test_docker_installs_only_the_runtime_lock() -> None:
