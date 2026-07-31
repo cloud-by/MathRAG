@@ -59,6 +59,20 @@ class KnowledgeItemUpdate(_KnowledgeItemValues):
 
     revision: int = Field(ge=1)
 
+    @model_validator(mode="after")
+    def require_nonnull_editable_values(self) -> KnowledgeItemUpdate:
+        editable_fields = self.model_fields_set - {"revision"}
+        if not editable_fields:
+            raise ValueError("至少提供一个可编辑字段")
+        null_fields = sorted(
+            field_name
+            for field_name in editable_fields
+            if getattr(self, field_name) is None
+        )
+        if null_fields:
+            raise ValueError(f"{', '.join(null_fields)} 不能为 null")
+        return self
+
 
 class KnowledgeItemRead(BaseModel):
     """知识条目的安全公开表示。"""

@@ -306,11 +306,17 @@ def test_repository_embedding_model_accepts_128_and_safely_rejects_longer() -> N
 def test_repository_item_updates_deduplicate_and_sort_item_ids(
     method_name: str,
 ) -> None:
-    """批量更新 item 时必须按 UUID 字典序稳定加锁。"""
+    """批量写入必须先按 UUID 顺序锁 item，再更新 item 和 chunk。"""
 
     class RowCountResult:
         def __init__(self, rowcount: int) -> None:
             self.rowcount = rowcount
+
+        def scalars(self) -> RowCountResult:
+            return self
+
+        def all(self) -> list[UUID]:
+            return [lower_item_id, higher_item_id]
 
     class CapturingSession:
         def __init__(self) -> None:
@@ -318,7 +324,10 @@ def test_repository_item_updates_deduplicate_and_sort_item_ids(
 
         async def execute(self, statement: object) -> RowCountResult:
             self.statements.append(statement)
-            return RowCountResult(3 if len(self.statements) == 1 else 2)
+            sql = str(statement)
+            if sql.startswith("UPDATE knowledge_chunks"):
+                return RowCountResult(3)
+            return RowCountResult(2)
 
     lower_item_id = UUID("10000000-0000-0000-0000-000000000001")
     higher_item_id = UUID("f0000000-0000-0000-0000-000000000002")
@@ -345,6 +354,10 @@ def test_repository_item_updates_deduplicate_and_sort_item_ids(
     affected = asyncio.run(getattr(repository, method_name)(candidates))
 
     assert affected == 3
+    assert str(session.statements[0]).startswith("SELECT knowledge_items.id")
+    assert "FOR UPDATE" in str(session.statements[0])
+    assert str(session.statements[1]).startswith("UPDATE knowledge_items")
+    assert str(session.statements[2]).startswith("UPDATE knowledge_chunks")
     item_update_parameters = session.statements[1].compile().params  # type: ignore[union-attr]
     item_id_lists = [
         value
@@ -354,6 +367,51 @@ def test_repository_item_updates_deduplicate_and_sort_item_ids(
         and all(isinstance(item_id, UUID) for item_id in value)
     ]
     assert item_id_lists == [[lower_item_id, higher_item_id]]
+
+
+def test_repository_embedding_write_locks_items_before_chunks() -> None:
+    """ready 写回也必须沿用 item→chunk 锁序。"""
+
+    class Result:
+        rowcount = 1
+
+        def scalars(self) -> Result:
+            return self
+
+        def all(self) -> list[UUID]:
+            return [item_id]
+
+    class CapturingSession:
+        def __init__(self) -> None:
+            self.statements: list[object] = []
+
+        async def execute(self, statement: object) -> Result:
+            self.statements.append(statement)
+            return Result()
+
+    item_id = UUID("10000000-0000-0000-0000-000000000001")
+    selected = candidate(1)
+    embedding_update = EmbeddingUpdate(
+        chunk_id=selected.chunk_id,
+        item_id=item_id,
+        expected_retrieval_text=selected.retrieval_text,
+        vector=tuple(vector(0)),
+    )
+    session = CapturingSession()
+
+    assert (
+        asyncio.run(
+            KnowledgeRepository(session).write_ready_embeddings(  # type: ignore[arg-type]
+                [embedding_update],
+                MODEL,
+            )
+        )
+        == 1
+    )
+
+    assert str(session.statements[0]).startswith("SELECT knowledge_items.id")
+    assert "FOR UPDATE" in str(session.statements[0])
+    assert str(session.statements[1]).startswith("UPDATE knowledge_chunks")
 
 
 def test_chunked_preserves_order_and_rejects_non_positive_true_integer_sizes() -> None:

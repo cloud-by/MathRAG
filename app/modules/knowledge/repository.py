@@ -26,6 +26,25 @@ class KnowledgeRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    async def _lock_items_in_order(
+        self,
+        item_ids: Sequence[UUID],
+        operation: str,
+    ) -> None:
+        """按稳定 UUID 顺序先锁 item，统一跨表写入的锁获取顺序。"""
+        selected = _validated_item_ids(item_ids)
+        if not selected:
+            return
+        result = await self._session.execute(
+            select(KnowledgeItem.id)
+            .where(KnowledgeItem.id.in_(selected))
+            .order_by(KnowledgeItem.id.asc())
+            .with_for_update()
+        )
+        locked = list(result.scalars().all())
+        if locked != selected:
+            raise KnowledgeSearchError(f"{operation}数量与输入不一致")
+
     async def get_by_legacy_id(self, legacy_id: str) -> KnowledgeItem | None:
         """按历史标识获取条目及其已加载的分块。"""
         statement = (
@@ -120,6 +139,13 @@ class KnowledgeRepository:
         ]
         item_ids = _unique_item_ids(selected)
 
+        await self._lock_items_in_order(item_ids, "候选条目标记")
+        item_result = await self._session.execute(
+            update(KnowledgeItem)
+            .where(KnowledgeItem.id.in_(item_ids))
+            .values(status="indexing")
+        )
+        _require_rowcount(item_result.rowcount, len(item_ids), "候选条目标记")
         chunk_result = await self._session.execute(
             update(KnowledgeChunk)
             .where(
@@ -131,12 +157,6 @@ class KnowledgeRepository:
             .values(status="pending")
         )
         _require_rowcount(chunk_result.rowcount, len(chunk_pairs), "候选分块标记")
-        item_result = await self._session.execute(
-            update(KnowledgeItem)
-            .where(KnowledgeItem.id.in_(item_ids))
-            .values(status="indexing")
-        )
-        _require_rowcount(item_result.rowcount, len(item_ids), "候选条目标记")
         return len(chunk_pairs)
 
     async def write_ready_embeddings(
@@ -149,6 +169,11 @@ class KnowledgeRepository:
         prepared = _validated_embedding_updates(updates)
         if not prepared:
             return 0
+
+        item_ids = _unique_item_ids(
+            [embedding_update for embedding_update, _vector in prepared]
+        )
+        await self._lock_items_in_order(item_ids, "Embedding 条目锁定")
 
         affected = 0
         for embedding_update, vector in prepared:
@@ -185,6 +210,13 @@ class KnowledgeRepository:
         ]
         item_ids = _unique_item_ids(selected)
 
+        await self._lock_items_in_order(item_ids, "失败条目标记")
+        item_result = await self._session.execute(
+            update(KnowledgeItem)
+            .where(KnowledgeItem.id.in_(item_ids))
+            .values(status="failed")
+        )
+        _require_rowcount(item_result.rowcount, len(item_ids), "失败条目标记")
         chunk_result = await self._session.execute(
             update(KnowledgeChunk)
             .where(
@@ -196,12 +228,6 @@ class KnowledgeRepository:
             .values(embedding=None, embedding_model=None, status="failed")
         )
         _require_rowcount(chunk_result.rowcount, len(chunk_pairs), "失败分块标记")
-        item_result = await self._session.execute(
-            update(KnowledgeItem)
-            .where(KnowledgeItem.id.in_(item_ids))
-            .values(status="failed")
-        )
-        _require_rowcount(item_result.rowcount, len(item_ids), "失败条目标记")
         return len(chunk_pairs)
 
     async def refresh_item_statuses(self, item_ids: Sequence[UUID]) -> int:
@@ -401,7 +427,9 @@ def _validated_item_ids(item_ids: Sequence[UUID]) -> list[UUID]:
     return list(dict.fromkeys(selected))
 
 
-def _unique_item_ids(candidates: Sequence[ReindexCandidate]) -> list[UUID]:
+def _unique_item_ids(
+    candidates: Sequence[ReindexCandidate | EmbeddingUpdate],
+) -> list[UUID]:
     """去重并按字典序提取候选的条目 UUID。"""
     return sorted({candidate.item_id for candidate in candidates}, key=str)
 

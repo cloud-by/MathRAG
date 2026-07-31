@@ -72,6 +72,29 @@ def test_knowledge_update_requires_revision_and_allows_only_editable_fields() ->
         KnowledgeItemUpdate.model_validate({"revision": 4, "status": "ready"})
 
 
+@pytest.mark.parametrize(
+    "field_name",
+    [
+        "category",
+        "title",
+        "keywords",
+        "content",
+        "example",
+        "steps",
+        "difficulty",
+        "visibility",
+    ],
+)
+def test_knowledge_update_rejects_explicit_null_fields(field_name: str) -> None:
+    with pytest.raises(ValidationError, match=field_name):
+        KnowledgeItemUpdate.model_validate({"revision": 4, field_name: None})
+
+
+def test_knowledge_update_requires_at_least_one_editable_field() -> None:
+    with pytest.raises(ValidationError, match="至少提供一个"):
+        KnowledgeItemUpdate.model_validate({"revision": 4})
+
+
 def test_read_models_are_frozen_and_do_not_expose_internal_fields() -> None:
     now = datetime.now(timezone.utc)
     item = KnowledgeItemRead(

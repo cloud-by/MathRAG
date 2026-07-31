@@ -16,6 +16,26 @@ class KnowledgeNotFoundError(AppError):
         )
 
 
+class KnowledgeRevisionConflictError(AppError):
+    """知识条目 revision 已被其他写入推进。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="KNOWLEDGE_REVISION_CONFLICT",
+            message="知识点已被其他用户更新，请刷新后重试。",
+            status_code=409,
+        )
+
+
+def map_knowledge_embedding_error(_exc: Exception) -> AppError:
+    """把 Provider 细节折叠为稳定且不泄密的公开错误。"""
+    return AppError(
+        code="EMBEDDING_UNAVAILABLE",
+        message="知识向量化服务暂时不可用。",
+        status_code=502,
+    )
+
+
 class KnowledgeSearchError(Exception):
     """知识向量化或检索失败。"""
 
