@@ -46,19 +46,19 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/knowledge',
     name: 'knowledge',
-    component: EMPTY_ROUTE,
+    component: () => import('../features/knowledge/KnowledgeListPage.vue'),
     meta: { requiresAdmin: true, requiresAuth: true, title: '知识库' },
   },
   {
     path: '/knowledge/new',
     name: 'knowledge-new',
-    component: EMPTY_ROUTE,
+    component: () => import('../features/knowledge/KnowledgeEditorPage.vue'),
     meta: { requiresAdmin: true, requiresAuth: true, title: '新建知识条目' },
   },
   {
     path: '/knowledge/:id',
     name: 'knowledge-detail',
-    component: EMPTY_ROUTE,
+    component: () => import('../features/knowledge/KnowledgeEditorPage.vue'),
     meta: { requiresAdmin: true, requiresAuth: true, title: '知识条目' },
   },
   {
