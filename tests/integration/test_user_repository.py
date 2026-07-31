@@ -1,0 +1,85 @@
+"""用户 Repository 的 PostgreSQL 集成测试。"""
+
+from __future__ import annotations
+
+import asyncio
+import ast
+import os
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from app.modules.auth.models import UserSession
+from app.modules.conversations.models import Conversation
+from app.modules.users.models import User
+from app.modules.users.repository import UserRepository
+from tests.integration.database_safety import require_test_database_url
+
+
+REPOSITORY_PATH = Path(__file__).resolve().parents[2] / "app" / "modules" / "users" / "repository.py"
+
+
+async def exercise_repository(database_url: str) -> None:
+    engine = create_async_engine(database_url)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+    try:
+        async with session_factory() as session:
+            async with session.begin():
+                await session.execute(delete(UserSession))
+                await session.execute(delete(Conversation))
+                await session.execute(delete(User))
+
+                repository = UserRepository(session)
+                user = User(
+                    username="repository-user",
+                    email="repository@example.local",
+                    password_hash="argon2-placeholder",
+                )
+                repository.add(user)
+                await session.flush()
+
+                assert await repository.get_by_username("repository-user") is user
+                assert await repository.get_by_id(user.id) is user
+                assert await repository.email_exists("repository@example.local") is True
+                assert await repository.email_exists(
+                    "repository@example.local",
+                    exclude_user_id=user.id,
+                ) is False
+
+                now = datetime(2026, 7, 31, tzinfo=UTC)
+                await repository.set_status(user, "disabled", now)
+                await repository.set_password_hash(user, "new-hash", now)
+                assert user.status == "disabled"
+                assert user.password_hash == "new-hash"
+                assert user.updated_at == now
+    finally:
+        await engine.dispose()
+
+
+def test_user_repository_reads_and_writes_without_owning_transactions() -> None:
+    database_url = os.getenv("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL 未配置")
+    database_url = require_test_database_url(database_url, os.getenv("DATABASE_URL"))
+
+    asyncio.run(exercise_repository(database_url))
+
+
+def test_user_repository_does_not_control_session_lifecycle() -> None:
+    tree = ast.parse(REPOSITORY_PATH.read_text(encoding="utf-8"))
+    forbidden = {
+        node.func.attr
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Attribute)
+        and isinstance(node.func.value.value, ast.Name)
+        and node.func.value.value.id == "self"
+        and node.func.value.attr == "_session"
+        and node.func.attr in {"begin", "commit", "rollback", "close"}
+    }
+
+    assert forbidden == set()
