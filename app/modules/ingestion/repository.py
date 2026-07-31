@@ -204,8 +204,6 @@ class IngestionRepository:
         drafts: Sequence[Mapping[str, object]],
     ) -> list[PipelineChunkSnapshot]:
         """为首次执行批量创建关联条目；调用方拥有提交边界。"""
-        if snapshot.document_id is None:
-            raise ValueError("PDF 导入任务缺少 document_id")
         existing = await self._session.scalar(
             select(KnowledgeItem.id)
             .where(KnowledgeItem.ingestion_job_id == snapshot.job_id)
@@ -214,11 +212,13 @@ class IngestionRepository:
         if existing is not None:
             raise ValueError("导入任务已经存在知识条目")
 
-        highest_index = await self._session.scalar(
-            select(func.max(KnowledgeChunk.chunk_index)).where(
-                KnowledgeChunk.document_id == snapshot.document_id
+        highest_index = None
+        if snapshot.document_id is not None:
+            highest_index = await self._session.scalar(
+                select(func.max(KnowledgeChunk.chunk_index)).where(
+                    KnowledgeChunk.document_id == snapshot.document_id
+                )
             )
-        )
         next_index = int(highest_index) + 1 if highest_index is not None else 0
         chunks: list[PipelineChunkSnapshot] = []
         for offset, draft in enumerate(drafts):
@@ -267,7 +267,7 @@ class IngestionRepository:
         now: datetime,
     ) -> bool:
         """以 job attempt 与分块正文双重 CAS 原子完成导入。"""
-        if snapshot.document_id is None or len(chunks) != len(vectors) or not chunks:
+        if len(chunks) != len(vectors) or not chunks:
             return False
         job = await self._session.scalar(
             select(IngestionJob)
@@ -347,16 +347,17 @@ class IngestionRepository:
         )
         if remaining:
             return False
-        document_result = await self._session.execute(
-            update(Document)
-            .where(
-                Document.id == snapshot.document_id,
-                Document.status == "processing",
+        if snapshot.document_id is not None:
+            document_result = await self._session.execute(
+                update(Document)
+                .where(
+                    Document.id == snapshot.document_id,
+                    Document.status == "processing",
+                )
+                .values(status="ready", updated_at=now)
             )
-            .values(status="ready", updated_at=now)
-        )
-        if document_result.rowcount != 1:
-            return False
+            if document_result.rowcount != 1:
+                return False
         return await self.complete(
             snapshot.job_id,
             snapshot.attempt_count,

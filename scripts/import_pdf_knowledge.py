@@ -1,85 +1,110 @@
+"""通过统一 ingestion service 导入本地 PDF。"""
+
 from __future__ import annotations
 
 import argparse
+import asyncio
+import sys
+from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
+from uuid import UUID
 
-from app.core.config import settings
-from app.services.pdf_knowledge_importer import (
-    DEFAULT_DATA_LAKE_DIR,
-    DEFAULT_ERROR_OUTPUT,
-    DEFAULT_TEXT_OUTPUT,
-    import_pdf_knowledge,
+from app.modules.ingestion.factory import (
+    build_ingestion_service,
+    dispose_ingestion_resources,
+    resolve_active_admin,
 )
+from app.modules.ingestion.service import IngestionService
+from app.services.pdf_knowledge_importer import DEFAULT_DATA_LAKE_DIR, iter_pdf_paths
 
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Extract local PDFs from data/data_lake into cleaned text chunks, optionally importing them as MathRAG seed records."
+        description="将本地 PDF 通过统一摄取任务导入 PostgreSQL/pgvector。"
     )
     parser.add_argument(
         "--data-dir",
         type=Path,
         default=DEFAULT_DATA_LAKE_DIR,
-        help="Directory containing local PDF files. Defaults to data/data_lake.",
+        help="PDF 文件目录，默认 data/data_lake。",
     )
     parser.add_argument(
-        "--text-output",
-        type=Path,
-        default=DEFAULT_TEXT_OUTPUT,
-        help="Cleaned PDF text chunk JSONL output path.",
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=settings.RAW_KB_PATH,
-        help="Knowledge seed JSONL output path when --import-to-knowledge is used.",
-    )
-    parser.add_argument(
-        "--error-output",
-        type=Path,
-        default=DEFAULT_ERROR_OUTPUT,
-        help="Invalid LLM outputs and PDF import errors are appended here.",
-    )
-    parser.add_argument("--no-recursive", action="store_true", help="Do not scan subdirectories.")
-    parser.add_argument("--append-text-output", action="store_true", help="Append text chunks instead of overwriting the text output.")
-    parser.add_argument("--max-chunk-chars", type=int, default=4000, help="Maximum cleaned text chars per chunk.")
-    parser.add_argument("--max-chunks", type=int, default=None, help="Optional hard limit for text chunks.")
-    parser.add_argument(
-        "--import-to-knowledge",
+        "--no-recursive",
         action="store_true",
-        help="After extracting text chunks, call the LLM and append validated Chinese seed records.",
+        help="不扫描子目录。",
     )
-    parser.add_argument("--category", default=None, help="Optional category hint, for example 函数.")
-    return parser.parse_args()
+    parser.add_argument(
+        "--max-chunks",
+        type=int,
+        default=None,
+        help="本次最多创建的 PDF 导入任务数。",
+    )
+    parser.add_argument("--category", default=None, help="可选知识分类提示。")
+    parser.add_argument(
+        "--requested-by",
+        required=True,
+        help="发起导入的 active admin 用户名。",
+    )
+    return parser
 
 
-def main() -> None:
-    args = parse_args()
-    result = import_pdf_knowledge(
-        data_dir=args.data_dir,
-        text_output_path=args.text_output,
-        output_path=args.output,
-        error_path=args.error_output,
+async def run_import(
+    args: argparse.Namespace,
+    *,
+    service: IngestionService | None = None,
+    resolve_admin: Callable[[str], Awaitable[UUID]] = resolve_active_admin,
+) -> int:
+    if args.max_chunks is not None and args.max_chunks <= 0:
+        raise ValueError("max_chunks 必须大于 0")
+    owner_id = await resolve_admin(args.requested_by)
+    active_service = service or build_ingestion_service()
+    paths = iter_pdf_paths(
+        args.data_dir,
         recursive=not args.no_recursive,
-        max_chunk_chars=args.max_chunk_chars,
-        max_chunks=args.max_chunks,
-        extract_only=not args.import_to_knowledge,
-        append_text_output=args.append_text_output,
-        category=args.category,
     )
+    if args.max_chunks is not None:
+        paths = paths[: args.max_chunks]
 
-    print("PDF import finished.")
-    print(f"Documents: {result.documents}")
-    print(f"Text chunks: {result.text_chunks}")
-    print(f"Saved records: {result.saved_records}")
-    print(f"Text output: {result.text_output}")
-    print(f"Errors: {result.error_output}")
-    if args.import_to_knowledge:
-        print("Next: python -m scripts.validate_seed_jsonl")
-        print("Next: python -m scripts.build_kb")
-        print("Next: python -m scripts.import_legacy_knowledge")
-        print("Next: python -m scripts.reindex_knowledge")
+    completed = 0
+    for path in paths:
+        accepted = await active_service.accept_local_pdf(
+            path,
+            owner_id=owner_id,
+            category=args.category,
+        )
+        await active_service.run_pending(accepted.job.id)
+        job = await active_service.get_job(accepted.job.id)
+        if job.status != "completed":
+            raise RuntimeError("PDF 导入任务未完成")
+        completed += 1
+    print(f"Completed jobs: {completed}")
+    return completed
+
+
+async def _async_main(args: argparse.Namespace) -> int:
+    business_error: BaseException | None = None
+    try:
+        await run_import(args)
+        return 0
+    except BaseException as exc:
+        business_error = exc
+        raise
+    finally:
+        try:
+            await dispose_ingestion_resources()
+        except BaseException:
+            if business_error is None:
+                raise
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        return asyncio.run(_async_main(args))
+    except Exception as exc:
+        print(f"INGESTION_IMPORT_FAILED: {type(exc).__name__}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

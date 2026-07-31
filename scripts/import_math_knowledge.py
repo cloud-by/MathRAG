@@ -1,76 +1,94 @@
+"""通过统一 ingestion service 导入公开网页数学知识。"""
+
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+import asyncio
+import sys
+from collections.abc import Awaitable, Callable, Sequence
+from uuid import UUID
 
-from app.core.config import settings
-from app.services.math_knowledge_importer import SOURCE_REGISTRY, import_math_knowledge
+from app.modules.ingestion.factory import (
+    build_ingestion_service,
+    dispose_ingestion_resources,
+    resolve_active_admin,
+)
+from app.modules.ingestion.service import IngestionService
+from app.services.math_knowledge_importer import SOURCE_REGISTRY
 
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Crawl public math knowledge sources and append validated MathRAG seed JSONL records."
+        description="抓取公开数学来源并通过统一摄取任务写入 PostgreSQL/pgvector。"
     )
     parser.add_argument(
         "--sources",
         nargs="+",
         default=["proofwiki", "wikibooks", "wikipedia"],
         choices=sorted(SOURCE_REGISTRY),
-        help="Data sources to use. PlanetMath is supported through limited HTML fetching.",
     )
+    parser.add_argument("--keywords", nargs="+", required=True)
+    parser.add_argument("--limit-per-source", type=int, default=3)
+    parser.add_argument("--category", default=None)
+    parser.add_argument("--max-chunk-chars", type=int, default=6000)
+    parser.add_argument("--delay-seconds", type=float, default=1.0)
     parser.add_argument(
-        "--keywords",
-        nargs="+",
+        "--requested-by",
         required=True,
-        help="Topic keywords to search, for example: derivative linear_algebra",
+        help="发起导入的 active admin 用户名。",
     )
-    parser.add_argument(
-        "--limit-per-source",
-        type=int,
-        default=3,
-        help="Search result limit per source and keyword.",
-    )
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=settings.RAW_KB_PATH,
-        help="Output JSONL path. Defaults to data/raw/math_knowledge_seed.jsonl.",
-    )
-    parser.add_argument(
-        "--error-output",
-        type=Path,
-        default=settings.RAW_DATA_DIR / "math_knowledge_import_errors.jsonl",
-        help="Invalid LLM outputs and transform errors are appended here.",
-    )
-    parser.add_argument("--category", default=None, help="Optional category hint.")
-    parser.add_argument("--max-chunk-chars", type=int, default=6000, help="Maximum cleaned text chars per LLM chunk.")
-    parser.add_argument("--delay-seconds", type=float, default=1.0, help="Delay between source requests.")
-    return parser.parse_args()
+    return parser
 
 
-def main() -> None:
-    args = parse_args()
-    summary = import_math_knowledge(
-        sources=args.sources,
-        keywords=args.keywords,
+async def run_import(
+    args: argparse.Namespace,
+    *,
+    service: IngestionService | None = None,
+    resolve_admin: Callable[[str], Awaitable[UUID]] = resolve_active_admin,
+) -> int:
+    requested_by = await resolve_admin(args.requested_by)
+    active_service = service or build_ingestion_service()
+    job = await active_service.accept_web(
+        requested_by=requested_by,
+        sources=list(args.sources),
+        keywords=list(args.keywords),
         limit_per_source=args.limit_per_source,
-        output_path=args.output,
-        error_path=args.error_output,
         category=args.category,
-        max_chunk_chars=args.max_chunk_chars,
         delay_seconds=args.delay_seconds,
+        max_chunk_chars=args.max_chunk_chars,
     )
+    await active_service.run_pending(job.id)
+    completed_job = await active_service.get_job(job.id)
+    if completed_job.status != "completed":
+        raise RuntimeError("网页导入任务未完成")
+    print("Completed jobs: 1")
+    return 1
 
-    print("Import finished.")
-    print(f"Documents: {summary['documents']}")
-    print(f"Chunks: {summary['chunks']}")
-    print(f"Saved records: {summary['saved_records']}")
-    print(f"Output: {args.output}")
-    print(f"Errors: {args.error_output}")
-    print("Next: python -m scripts.build_kb")
-    print("Next: python -m scripts.import_legacy_knowledge")
-    print("Next: python -m scripts.reindex_knowledge")
+
+async def _async_main(args: argparse.Namespace) -> int:
+    business_error: BaseException | None = None
+    try:
+        await run_import(args)
+        return 0
+    except BaseException as exc:
+        business_error = exc
+        raise
+    finally:
+        try:
+            await dispose_ingestion_resources()
+        except BaseException:
+            if business_error is None:
+                raise
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    try:
+        return asyncio.run(_async_main(args))
+    except Exception as exc:
+        print(f"INGESTION_IMPORT_FAILED: {type(exc).__name__}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

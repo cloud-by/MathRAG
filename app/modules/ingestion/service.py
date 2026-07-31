@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Mapping
+import math
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import BinaryIO, Protocol
 from uuid import UUID, uuid4
 
 from openai import APIError, APITimeoutError, RateLimitError
@@ -55,6 +56,11 @@ from app.services.knowledge_extractor import (
     KnowledgeDraft,
     extract_knowledge_drafts,
 )
+from app.services.math_knowledge_importer import (
+    SOURCE_REGISTRY,
+    chunk_text,
+    discover_documents,
+)
 
 
 DOCUMENT_DUPLICATE_CONSTRAINTS = frozenset(
@@ -67,6 +73,7 @@ DOCUMENT_DUPLICATE_CONSTRAINTS = frozenset(
 DOCUMENT_STATUSES = frozenset(
     {"pending", "processing", "ready", "failed", "archived"}
 )
+PDF_MIME_TYPE = "application/pdf"
 
 
 class UploadStorageProtocol(Protocol):
@@ -162,6 +169,7 @@ class IngestionService:
             [str, str | None], list[KnowledgeDraft]
         ] = extract_knowledge_drafts,
         pdf_extractor: Callable[..., ExtractedPDF] = extract_pdf_text,
+        web_source_loader: Callable[[Mapping[str, object]], str] | None = None,
         upload_root: Path = settings.UPLOAD_DIR,
         max_pdf_pages: int = settings.MAX_PDF_PAGES,
         max_ingestion_text_chars: int = settings.MAX_INGESTION_TEXT_CHARS,
@@ -180,6 +188,7 @@ class IngestionService:
         self._embedding_provider = embedding_provider
         self._draft_extractor = draft_extractor
         self._pdf_extractor = pdf_extractor
+        self._web_source_loader = web_source_loader or _load_web_source_text
         self._upload_root = upload_root
         self._max_pdf_pages = max_pdf_pages
         self._max_ingestion_text_chars = max_ingestion_text_chars
@@ -254,6 +263,71 @@ class IngestionService:
             raise
         self._storage.release_upload(stored.relative_path)
         return accepted
+
+    async def accept_local_pdf(
+        self,
+        path: Path,
+        *,
+        owner_id: UUID,
+        category: str | None = None,
+    ) -> DocumentAccepted:
+        """让本地 CLI 复用在线上传的校验、摘要和短事务路径。"""
+        upload = _LocalPathUpload(Path(path))
+        try:
+            return await self.accept_pdf(
+                upload,
+                owner_id=owner_id,
+                category=category,
+            )
+        finally:
+            await upload.close()
+
+    async def accept_web(
+        self,
+        *,
+        requested_by: UUID,
+        sources: Sequence[str],
+        keywords: Sequence[str],
+        limit_per_source: int = 3,
+        category: str | None = None,
+        delay_seconds: float = 1.0,
+        max_chunk_chars: int = 6000,
+    ) -> IngestionJobRead:
+        """以短事务创建一个不含凭据的网页导入任务。"""
+        payload = _web_request_payload(
+            sources=sources,
+            keywords=keywords,
+            limit_per_source=limit_per_source,
+            category=category,
+            delay_seconds=delay_seconds,
+            max_chunk_chars=max_chunk_chars,
+        )
+        timestamp = self._now()
+        job = IngestionJob(
+            id=uuid4(),
+            requested_by=requested_by,
+            document_id=None,
+            job_type="web",
+            status="pending",
+            progress=0,
+            request_payload=payload,
+            attempt_count=0,
+            error_code=None,
+            error_message=None,
+            started_at=None,
+            finished_at=None,
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        try:
+            async with self._session_factory() as session:
+                async with session.begin():
+                    self._repository_factory(session).add_job(job)
+                    await session.flush()
+                    result = IngestionJobRead.model_validate(job)
+        except SQLAlchemyError:
+            raise IngestionPersistenceError() from None
+        return result
 
     async def list_documents(
         self,
@@ -333,8 +407,8 @@ class IngestionService:
             if not chunks:
                 text = await self._read_source(snapshot, document)
                 category = _category_from_payload(snapshot.request_payload)
-                drafts = await asyncio.to_thread(
-                    self._draft_extractor,
+                drafts = await self._extract_drafts(
+                    snapshot,
                     text,
                     category,
                 )
@@ -353,23 +427,40 @@ class IngestionService:
     async def _load_pipeline_state(
         self,
         snapshot: JobSnapshot,
-    ) -> tuple[DocumentSnapshot, list[PipelineChunkSnapshot]]:
-        if snapshot.job_type != "pdf" or snapshot.document_id is None:
-            raise _PipelineContractError()
+    ) -> tuple[DocumentSnapshot | None, list[PipelineChunkSnapshot]]:
         async with self._session_factory() as session:
             repository = self._repository_factory(session)
-            document = await repository.get_document_snapshot(snapshot.document_id)
+            document = None
+            if snapshot.document_id is not None:
+                document = await repository.get_document_snapshot(
+                    snapshot.document_id
+                )
             chunks = await repository.list_pipeline_chunks(snapshot.job_id)
-        if document is None:
+        if snapshot.job_type == "pdf" and (
+            snapshot.document_id is None or document is None
+        ):
+            raise _PipelineContractError()
+        if snapshot.job_type == "web" and snapshot.document_id is not None:
+            raise _PipelineContractError()
+        if snapshot.job_type not in {"pdf", "web"}:
             raise _PipelineContractError()
         return document, chunks
 
     async def _read_source(
         self,
         snapshot: JobSnapshot,
-        document: DocumentSnapshot,
+        document: DocumentSnapshot | None,
     ) -> str:
-        if snapshot.document_id != document.document_id:
+        if snapshot.job_type == "web":
+            text = await asyncio.to_thread(
+                self._web_source_loader,
+                snapshot.request_payload,
+            )
+            normalized = text.strip()
+            if not normalized or len(normalized) > self._max_ingestion_text_chars:
+                raise _PipelineContractError()
+            return normalized
+        if document is None or snapshot.document_id != document.document_id:
             raise _PipelineContractError()
         source_path = resolve_stored_path(
             self._upload_root,
@@ -384,6 +475,27 @@ class IngestionService:
         if not text or len(text) > self._max_ingestion_text_chars:
             raise _PipelinePdfError()
         return text
+
+    async def _extract_drafts(
+        self,
+        snapshot: JobSnapshot,
+        text: str,
+        category: str | None,
+    ) -> list[KnowledgeDraft]:
+        segments = [text]
+        if snapshot.job_type == "web":
+            options = _web_options_from_payload(snapshot.request_payload)
+            segments = chunk_text(text, max_chars=options.max_chunk_chars)
+        drafts: list[KnowledgeDraft] = []
+        for segment in segments:
+            extracted = await asyncio.to_thread(
+                self._draft_extractor,
+                segment,
+                category,
+            )
+            _validate_drafts(extracted)
+            drafts.extend(extracted)
+        return drafts
 
     async def _persist_drafts(
         self,
@@ -576,6 +688,47 @@ class _PipelinePdfError(Exception):
     """PDF 抽取结果不满足在线导入长度契约。"""
 
 
+class _LocalPathUpload:
+    """把本地 PDF 适配为 UploadStorage 的异步读取协议。"""
+
+    content_type = PDF_MIME_TYPE
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self.filename = path.name
+        self._file: BinaryIO | None = None
+
+    async def read(self, size: int = -1) -> bytes:
+        if self._file is None:
+            self._file = await asyncio.to_thread(self._path.open, "rb")
+        return await asyncio.to_thread(self._file.read, size)
+
+    async def close(self) -> None:
+        file = self._file
+        self._file = None
+        if file is not None:
+            await asyncio.to_thread(file.close)
+
+
+class _WebOptions:
+    """已校验的网页任务执行参数。"""
+
+    def __init__(
+        self,
+        *,
+        sources: list[str],
+        keywords: list[str],
+        limit_per_source: int,
+        delay_seconds: float,
+        max_chunk_chars: int,
+    ) -> None:
+        self.sources = sources
+        self.keywords = keywords
+        self.limit_per_source = limit_per_source
+        self.delay_seconds = delay_seconds
+        self.max_chunk_chars = max_chunk_chars
+
+
 def _category_from_payload(payload: object) -> str | None:
     if not isinstance(payload, Mapping):
         return None
@@ -584,6 +737,105 @@ def _category_from_payload(payload: object) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _web_request_payload(
+    *,
+    sources: Sequence[str],
+    keywords: Sequence[str],
+    limit_per_source: int,
+    category: str | None,
+    delay_seconds: float,
+    max_chunk_chars: int,
+) -> dict[str, object]:
+    raw: dict[str, object] = {
+        "sources": list(sources),
+        "keywords": list(keywords),
+        "limit_per_source": limit_per_source,
+        "delay_seconds": delay_seconds,
+        "max_chunk_chars": max_chunk_chars,
+    }
+    normalized_category = _pdf_request_payload(category).get("category")
+    if normalized_category is not None:
+        raw["category"] = normalized_category
+    options = _web_options_from_payload(raw)
+    payload: dict[str, object] = {
+        "sources": options.sources,
+        "keywords": options.keywords,
+        "limit_per_source": options.limit_per_source,
+        "delay_seconds": options.delay_seconds,
+        "max_chunk_chars": options.max_chunk_chars,
+    }
+    if normalized_category is not None:
+        payload["category"] = normalized_category
+    return payload
+
+
+def _web_options_from_payload(payload: object) -> _WebOptions:
+    if not isinstance(payload, Mapping):
+        raise _PipelineContractError()
+    sources_value = payload.get("sources")
+    keywords_value = payload.get("keywords")
+    if not isinstance(sources_value, list) or not isinstance(keywords_value, list):
+        raise _PipelineContractError()
+    sources = _normalized_string_list(sources_value, max_items=10, max_length=64)
+    keywords = _normalized_string_list(keywords_value, max_items=20, max_length=200)
+    if any(source not in SOURCE_REGISTRY for source in sources):
+        raise _PipelineContractError()
+
+    limit = payload.get("limit_per_source")
+    max_chars = payload.get("max_chunk_chars")
+    delay = payload.get("delay_seconds")
+    if type(limit) is not int or not 1 <= limit <= 20:
+        raise _PipelineContractError()
+    if type(max_chars) is not int or not 200 <= max_chars <= 20_000:
+        raise _PipelineContractError()
+    if isinstance(delay, bool) or not isinstance(delay, (int, float)):
+        raise _PipelineContractError()
+    normalized_delay = float(delay)
+    if not math.isfinite(normalized_delay) or not 0 <= normalized_delay <= 60:
+        raise _PipelineContractError()
+    return _WebOptions(
+        sources=sources,
+        keywords=keywords,
+        limit_per_source=limit,
+        delay_seconds=normalized_delay,
+        max_chunk_chars=max_chars,
+    )
+
+
+def _normalized_string_list(
+    values: list[object],
+    *,
+    max_items: int,
+    max_length: int,
+) -> list[str]:
+    normalized: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            raise _PipelineContractError()
+        text = value.strip()
+        if not text or len(text) > max_length or text in normalized:
+            if text in normalized:
+                continue
+            raise _PipelineContractError()
+        normalized.append(text)
+    if not normalized or len(normalized) > max_items:
+        raise _PipelineContractError()
+    return normalized
+
+
+def _load_web_source_text(payload: Mapping[str, object]) -> str:
+    """抓取网页来源并返回纯文本，不写 seed/error JSONL。"""
+    options = _web_options_from_payload(payload)
+    documents = discover_documents(
+        sources=options.sources,
+        keywords=options.keywords,
+        limit_per_source=options.limit_per_source,
+        delay_seconds=options.delay_seconds,
+        error_path=None,
+    )
+    return "\n\n".join(document.text for document in documents if document.text)
 
 
 def _validate_drafts(drafts: object) -> None:
