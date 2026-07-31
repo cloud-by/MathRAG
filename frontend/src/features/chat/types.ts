@@ -1,6 +1,7 @@
 import type { components } from '../../api/schema'
 
-type ChatResponse = components['schemas']['ChatV1Response']
+export type ChatRequest = components['schemas']['ChatV1Request']
+export type ChatResponse = components['schemas']['ChatV1Response']
 
 export type AnswerContent = Pick<
   ChatResponse,
@@ -14,3 +15,18 @@ export type AnswerContent = Pick<
 >
 
 export type ReferenceItem = components['schemas']['ReferenceItem']
+
+export interface PendingTurn {
+  conversationId: string
+  clientRequestId: string
+  question: string
+  topK: number
+  controller: AbortController
+}
+
+export interface ChatTurn {
+  response: ChatResponse
+}
+
+export type ChatStatus =
+  'idle' | 'submitting' | 'success' | 'error' | 'cancelled'

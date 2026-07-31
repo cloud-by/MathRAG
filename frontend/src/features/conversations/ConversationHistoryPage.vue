@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ArrowLeft, MessageSquarePlus, RefreshCw } from '@lucide/vue'
+import { ArrowLeft, RefreshCw } from '@lucide/vue'
 import { computed, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
@@ -7,12 +7,22 @@ import EmptyState from '../../components/EmptyState.vue'
 import IconButton from '../../components/IconButton.vue'
 import InlineAlert from '../../components/InlineAlert.vue'
 import LoadingState from '../../components/LoadingState.vue'
-import MathContent from '../../components/MathContent.vue'
 import PaginationControls from '../../components/PaginationControls.vue'
-import AnswerView from '../chat/AnswerView.vue'
-import type { Message } from './types'
-import { answerFromMessage } from './types'
+import MessageList from '../chat/MessageList.vue'
+import type { ChatTurn, PendingTurn } from '../chat/types'
 import { useConversationHistory } from './useConversations'
+
+withDefaults(
+  defineProps<{
+    pending?: PendingTurn | null
+    turns?: ChatTurn[]
+  }>(),
+  { pending: null, turns: () => [] },
+)
+
+const emit = defineEmits<{
+  selectRelated: [question: string]
+}>()
 
 const PAGE_SIZE = 50
 const route = useRoute()
@@ -24,18 +34,6 @@ const page = computed(() => {
   const value = Number(route.query.message_page)
   return Number.isInteger(value) && value >= 1 ? value : 1
 })
-
-function roleLabel(role: Message['role']): string {
-  if (role === 'user') return '你'
-  if (role === 'assistant') return 'MathRAG'
-  return '系统'
-}
-
-function statusLabel(status: Message['status']): string {
-  if (status === 'pending') return '正在处理'
-  if (status === 'failed') return '未完成'
-  return ''
-}
 
 function setOffset(offset: number): void {
   void router.push({
@@ -52,6 +50,8 @@ watch(
   },
   { immediate: true },
 )
+
+defineExpose({ refresh: query.refresh })
 </script>
 
 <template>
@@ -80,46 +80,27 @@ watch(
           </RouterLink>
           <h2>{{ query.state.value.data.conversation.title }}</h2>
         </div>
-        <div class="history-page__commands">
-          <IconButton label="刷新历史" @click="query.refresh">
-            <RefreshCw :size="18" aria-hidden="true" />
-          </IconButton>
-          <RouterLink
-            class="primary-command"
-            :to="`/chat?conversation_id=${conversationId}`"
-          >
-            <MessageSquarePlus :size="18" aria-hidden="true" />
-            继续对话
-          </RouterLink>
-        </div>
+        <IconButton label="刷新历史" @click="query.refresh">
+          <RefreshCw :size="18" aria-hidden="true" />
+        </IconButton>
       </header>
 
       <EmptyState
-        v-if="!query.state.value.data.messages.items.length"
+        v-if="
+          !query.state.value.data.messages.items.length &&
+          !turns.length &&
+          !pending
+        "
         title="这个会话还没有消息"
         description="继续对话后，问题和回答会保存在这里。"
       />
-      <section v-else class="history-feed" aria-label="历史消息">
-        <article
-          v-for="item in query.state.value.data.messages.items"
-          :key="item.id"
-          class="history-message"
-          :class="`history-message--${item.role}`"
-          data-testid="history-message"
-        >
-          <header>
-            <h2>{{ roleLabel(item.role) }}</h2>
-            <span v-if="item.status !== 'completed'">
-              {{ statusLabel(item.status) }}
-            </span>
-          </header>
-          <AnswerView
-            v-if="item.role === 'assistant' && answerFromMessage(item)"
-            :answer="answerFromMessage(item)!"
-          />
-          <MathContent v-else :content="item.content" />
-        </article>
-      </section>
+      <MessageList
+        v-else
+        :messages="query.state.value.data.messages.items"
+        :turns="turns"
+        :pending="pending"
+        @select-related="emit('selectRelated', $event)"
+      />
 
       <PaginationControls
         v-if="query.state.value.data.messages.total > PAGE_SIZE"
@@ -128,6 +109,7 @@ watch(
         :total="query.state.value.data.messages.total"
         @update:offset="setOffset"
       />
+      <slot name="composer" />
     </template>
   </main>
 </template>
@@ -154,9 +136,7 @@ watch(
   letter-spacing: 0;
 }
 
-.history-page__back,
-.history-page__commands,
-.primary-command {
+.history-page__back {
   display: flex;
   align-items: center;
 }
@@ -167,60 +147,6 @@ watch(
   color: var(--color-text-secondary);
   font-size: 13px;
   text-decoration: none;
-}
-
-.history-page__commands {
-  flex: 0 0 auto;
-  gap: var(--space-2);
-}
-
-.primary-command {
-  min-height: 38px;
-  gap: var(--space-2);
-  padding: 0 var(--space-4);
-  border-radius: var(--radius-md);
-  color: var(--color-neutral-0);
-  background: var(--color-action);
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.history-feed {
-  border-top: 1px solid var(--color-border);
-}
-
-.history-message {
-  padding: var(--space-5) 0;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.history-message > header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
-}
-
-.history-message > header h2 {
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  letter-spacing: 0;
-}
-
-.history-message > header span {
-  color: var(--color-warning);
-  font-size: 12px;
-}
-
-.history-message--user {
-  padding-left: var(--space-5);
-  border-left: 3px solid var(--color-neutral-200);
-}
-
-.history-message :deep(.answer-view) {
-  max-width: none;
 }
 
 .inline-command {
@@ -246,14 +172,6 @@ small {
   .history-page__header {
     align-items: stretch;
     flex-direction: column;
-  }
-
-  .history-page__commands {
-    justify-content: flex-end;
-  }
-
-  .history-message--user {
-    padding-left: var(--space-3);
   }
 }
 </style>

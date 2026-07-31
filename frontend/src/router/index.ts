@@ -27,7 +27,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/chat',
     name: 'chat',
-    component: EMPTY_ROUTE,
+    component: () => import('../features/chat/ChatPage.vue'),
     meta: { requiresAuth: true, title: '新建问答' },
   },
   {
@@ -40,8 +40,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/conversations/:id',
     name: 'conversation',
-    component: () =>
-      import('../features/conversations/ConversationHistoryPage.vue'),
+    component: () => import('../features/chat/ChatPage.vue'),
     meta: { requiresAuth: true, title: '会话详情' },
   },
   {

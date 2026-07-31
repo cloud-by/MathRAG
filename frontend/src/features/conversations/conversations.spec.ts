@@ -281,9 +281,7 @@ describe('ConversationHistoryPage', () => {
     expect(messages[1]?.textContent).toContain('由')
     expect(messages[1]?.textContent).toContain('两边开平方')
     expect(messages[1]?.textContent).not.toContain('服务端纯文本回答')
-    expect(
-      screen.getByRole('link', { name: '继续对话' }).getAttribute('href'),
-    ).toBe(`/chat?conversation_id=${CONVERSATION_ID}`)
+    expect(screen.getByRole('button', { name: '刷新历史' })).toBeTruthy()
   })
 
   it('falls back to message content for invalid response metadata', async () => {
