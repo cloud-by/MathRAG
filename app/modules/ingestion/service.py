@@ -39,6 +39,7 @@ from app.modules.ingestion.schemas import (
     DocumentAccepted,
     DocumentPage,
     DocumentRead,
+    IngestionJobPage,
     IngestionJobRead,
 )
 from app.modules.ingestion.storage import (
@@ -73,6 +74,10 @@ DOCUMENT_DUPLICATE_CONSTRAINTS = frozenset(
 DOCUMENT_STATUSES = frozenset(
     {"pending", "processing", "ready", "failed", "archived"}
 )
+INGESTION_JOB_STATUSES = frozenset(
+    {"pending", "running", "completed", "failed", "cancelled"}
+)
+INGESTION_JOB_TYPES = frozenset({"text", "pdf", "web", "reindex"})
 PDF_MIME_TYPE = "application/pdf"
 
 
@@ -96,6 +101,16 @@ class IngestionRepositoryProtocol(Protocol):
         limit: int,
         status: str | None,
     ) -> tuple[list[Document], int]: ...
+
+    async def list_jobs(
+        self,
+        *,
+        offset: int,
+        limit: int,
+        status: str | None,
+        job_type: str | None,
+        document_id: UUID | None,
+    ) -> tuple[list[IngestionJob], int]: ...
 
     async def get_job(self, job_id: UUID) -> IngestionJob | None: ...
 
@@ -349,6 +364,38 @@ class IngestionService:
             page=page,
             page_size=page_size,
             total=total,
+        )
+
+    async def list_jobs(
+        self,
+        *,
+        status: str | None = None,
+        job_type: str | None = None,
+        document_id: UUID | None = None,
+        offset: int = 0,
+        limit: int = 25,
+    ) -> IngestionJobPage:
+        _validate_job_page(
+            status=status,
+            job_type=job_type,
+            document_id=document_id,
+            offset=offset,
+            limit=limit,
+        )
+        async with self._session_factory() as session:
+            jobs, total = await self._repository_factory(session).list_jobs(
+                status=status,
+                job_type=job_type,
+                document_id=document_id,
+                offset=offset,
+                limit=limit,
+            )
+            items = [IngestionJobRead.model_validate(job) for job in jobs]
+        return IngestionJobPage(
+            items=items,
+            total=total,
+            offset=offset,
+            limit=limit,
         )
 
     async def get_job(self, job_id: UUID) -> IngestionJobRead:
@@ -659,6 +706,30 @@ def _validate_document_page(
         raise AppError(
             code="REQUEST_VALIDATION_FAILED",
             message="文档筛选或分页参数无效。",
+            status_code=422,
+        )
+
+
+def _validate_job_page(
+    *,
+    status: str | None,
+    job_type: str | None,
+    document_id: UUID | None,
+    offset: int,
+    limit: int,
+) -> None:
+    if (
+        (status is not None and status not in INGESTION_JOB_STATUSES)
+        or (job_type is not None and job_type not in INGESTION_JOB_TYPES)
+        or (document_id is not None and not isinstance(document_id, UUID))
+        or type(offset) is not int
+        or offset < 0
+        or type(limit) is not int
+        or not 1 <= limit <= 100
+    ):
+        raise AppError(
+            code="REQUEST_VALIDATION_FAILED",
+            message="导入任务筛选或分页参数无效。",
             status_code=422,
         )
 

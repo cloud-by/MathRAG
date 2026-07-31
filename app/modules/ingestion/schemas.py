@@ -56,6 +56,17 @@ class IngestionJobRead(BaseModel):
     updated_at: datetime
 
 
+class IngestionJobPage(BaseModel):
+    """导入任务偏移分页响应。"""
+
+    model_config = ConfigDict(extra="forbid", from_attributes=True, frozen=True)
+
+    items: list[IngestionJobRead]
+    total: int = Field(ge=0)
+    offset: int = Field(ge=0)
+    limit: int = Field(ge=1, le=100)
+
+
 class DocumentAccepted(BaseModel):
     """上传成功后返回的文档及其待执行任务。"""
 

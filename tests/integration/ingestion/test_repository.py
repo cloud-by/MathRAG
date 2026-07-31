@@ -258,19 +258,19 @@ async def _exercise_repository(database_url: str) -> None:
 
         # list 与 count 使用同一筛选，并按 created_at DESC、id DESC 稳定排序。
         latest = NOW + timedelta(hours=1)
-        newest_low, _ = await _seed(
+        newest_low, newest_low_job = await _seed(
             session_factory,
             10,
             created_at=latest,
             document_status="archived",
         )
-        newest_high, _ = await _seed(
+        newest_high, newest_high_job = await _seed(
             session_factory,
             11,
             created_at=latest,
             document_status="archived",
         )
-        older, _ = await _seed(
+        older, older_job = await _seed(
             session_factory,
             12,
             created_at=NOW,
@@ -294,6 +294,40 @@ async def _exercise_repository(database_url: str) -> None:
             assert second_total == total
             assert await repository.get_job(UUID(int=999_999)) is None
             assert await repository.get_job(concurrent.id) is not None
+
+            jobs, job_total = await repository.list_jobs(
+                offset=0,
+                limit=10,
+                status="pending",
+                job_type="pdf",
+                document_id=None,
+            )
+            assert [item.id for item in jobs] == [
+                newest_high_job.id,
+                newest_low_job.id,
+                older_job.id,
+            ]
+            assert job_total == 3
+
+            document_jobs, document_total = await repository.list_jobs(
+                offset=0,
+                limit=10,
+                status=None,
+                job_type=None,
+                document_id=newest_high.id,
+            )
+            assert [item.id for item in document_jobs] == [newest_high_job.id]
+            assert document_total == 1
+
+            second_job_page, second_job_total = await repository.list_jobs(
+                offset=1,
+                limit=1,
+                status="pending",
+                job_type="pdf",
+                document_id=None,
+            )
+            assert [item.id for item in second_job_page] == [newest_low_job.id]
+            assert second_job_total == job_total
 
         # Repository 不提交：外部 observer 看不到未提交新增，会话关闭后行消失。
         uncommitted_document = _document(99)

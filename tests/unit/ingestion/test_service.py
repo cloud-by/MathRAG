@@ -12,6 +12,7 @@ from uuid import UUID
 import pytest
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from app.core.errors import AppError
 from app.modules.ingestion.errors import DocumentStorageError
 from app.modules.ingestion.models import Document, IngestionJob
 from app.modules.ingestion.repository import JobSnapshot
@@ -146,6 +147,7 @@ class FakeRepository:
         retry_snapshot: JobSnapshot | None = None,
         pending_snapshot: JobSnapshot | None = None,
         documents: list[Document] | None = None,
+        jobs: list[IngestionJob] | None = None,
     ) -> None:
         self.session = session
         self.existing_job = existing_job
@@ -153,6 +155,8 @@ class FakeRepository:
         self.retry_snapshot = retry_snapshot
         self.pending_snapshot = pending_snapshot
         self.documents = documents or []
+        self.jobs = jobs or []
+        self.list_job_arguments: dict[str, object] | None = None
         self.added_document: Document | None = None
         self.added_job: IngestionJob | None = None
 
@@ -166,6 +170,10 @@ class FakeRepository:
 
     async def list_documents(self, **kwargs):
         return self.documents, len(self.documents)
+
+    async def list_jobs(self, **kwargs):
+        self.list_job_arguments = kwargs
+        return self.jobs, len(self.jobs)
 
     async def get_job(self, job_id: UUID) -> IngestionJob | None:
         return self.existing_job
@@ -482,3 +490,45 @@ async def test_read_and_cancel_results_never_expose_internal_fields() -> None:
     assert "request_payload" not in serialized
     assert "private.pdf" not in serialized
     assert "绝不能公开" not in serialized
+
+
+@run_async
+async def test_list_jobs_maps_filters_and_validates_direct_callers() -> None:
+    events: list[str] = []
+    repositories = RepositoryFactory(jobs=[_job(status="failed")])
+    service = IngestionService(
+        FakeSessionFactory(events),  # type: ignore[arg-type]
+        FakeStorage(events),  # type: ignore[arg-type]
+        repository_factory=repositories,  # type: ignore[arg-type]
+        now=lambda: NOW,
+    )
+
+    page = await service.list_jobs(
+        status="failed",
+        job_type="pdf",
+        document_id=DOCUMENT_ID,
+        offset=5,
+        limit=10,
+    )
+
+    assert page.total == 1
+    assert (page.offset, page.limit) == (5, 10)
+    assert [item.id for item in page.items] == [JOB_ID]
+    assert repositories.instances[0].list_job_arguments == {
+        "status": "failed",
+        "job_type": "pdf",
+        "document_id": DOCUMENT_ID,
+        "offset": 5,
+        "limit": 10,
+    }
+
+    invalid_arguments = (
+        {"offset": -1},
+        {"limit": 0},
+        {"limit": 101},
+        {"status": "unknown"},
+        {"job_type": "unknown"},
+    )
+    for invalid in invalid_arguments:
+        with pytest.raises(AppError, match="REQUEST_VALIDATION_FAILED"):
+            await service.list_jobs(**invalid)

@@ -23,6 +23,7 @@ from app.modules.auth.service import AuthenticatedPrincipal
 from app.modules.ingestion.schemas import (
     DocumentAccepted,
     DocumentPage,
+    IngestionJobPage,
     IngestionJobRead,
 )
 from app.modules.ingestion.service import IngestionService
@@ -90,6 +91,34 @@ async def list_documents(
         status=status_filter,
         page=page,
         page_size=page_size,
+    )
+
+
+@router.get(
+    "/ingestion-jobs",
+    tags=["ingestion"],
+    response_model=IngestionJobPage,
+)
+async def list_ingestion_jobs(
+    status_filter: Literal[
+        "pending", "running", "completed", "failed", "cancelled"
+    ]
+    | None = Query(default=None, alias="status"),
+    job_type: Literal["text", "pdf", "web", "reindex"] | None = Query(
+        default=None
+    ),
+    document_id: UUID | None = Query(default=None),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=25, ge=1, le=100),
+    _principal: AuthenticatedPrincipal = Depends(require_admin),
+    service: IngestionService = Depends(get_ingestion_service),
+) -> IngestionJobPage:
+    return await service.list_jobs(
+        status=status_filter,
+        job_type=job_type,
+        document_id=document_id,
+        offset=offset,
+        limit=limit,
     )
 
 

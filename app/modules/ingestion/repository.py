@@ -84,6 +84,42 @@ class IngestionRepository:
         )
         return documents, total
 
+    async def list_jobs(
+        self,
+        *,
+        offset: int,
+        limit: int,
+        status: str | None,
+        job_type: str | None,
+        document_id: UUID | None,
+    ) -> tuple[list[IngestionJob], int]:
+        filters = []
+        if status is not None:
+            filters.append(IngestionJob.status == status)
+        if job_type is not None:
+            filters.append(IngestionJob.job_type == job_type)
+        if document_id is not None:
+            filters.append(IngestionJob.document_id == document_id)
+
+        jobs = list(
+            (
+                await self._session.scalars(
+                    select(IngestionJob)
+                    .where(*filters)
+                    .order_by(IngestionJob.created_at.desc(), IngestionJob.id.desc())
+                    .offset(offset)
+                    .limit(limit)
+                )
+            ).all()
+        )
+        total = int(
+            await self._session.scalar(
+                select(func.count()).select_from(IngestionJob).where(*filters)
+            )
+            or 0
+        )
+        return jobs, total
+
     async def get_job(self, job_id: UUID) -> IngestionJob | None:
         return await self._session.scalar(
             select(IngestionJob).where(IngestionJob.id == job_id)
