@@ -14,7 +14,8 @@ MathRAG 是一个面向数学问答场景的 RAG 原型系统，基于 **FastAPI
 - **Agentic 检索规划**：先由 LLM 将用户问题改写为 1~4 条检索子问题，再合并检索结果。
 - **pgvector 向量检索**：PostgreSQL 是在线知识的唯一事实数据源，按状态、可见性和模型精确过滤。
 - **结构化知识库**：JSONL 种子知识经过可重复导入与 reindex 进入 PostgreSQL/pgvector。
-- **知识抽取**：管理员可从文本预览抽取结果；旧 JSONL Web 追加入口已停用。
+- **知识管理**：管理员可通过带 revision 的 CRUD API 创建、更新和归档知识，普通用户只读取 public+ready 数据。
+- **统一摄取**：管理员上传 PDF 或通过网页/PDF CLI 创建可轮询、取消和重试的导入任务；新数据不再追加 JSONL。
 - **公式渲染**：前端通过 KaTeX 渲染 `\(...\)` 与 `\[...\]` 公式。
 - **LLM JSON 修复**：对模型输出中常见 LaTeX 反斜杠转义问题做容错修复。
 - **Docker 部署**：提供 `Dockerfile` 与 `docker-compose.yml`。
@@ -34,6 +35,7 @@ MathRAG/
 │   ├── modules/auth/         # 服务端 Session、CSRF 与角色依赖
 │   ├── modules/conversations/# 用户隔离的会话与消息
 │   ├── modules/knowledge/    # pgvector 模型、仓储、检索与 reindex 服务
+│   ├── modules/ingestion/    # 安全上传、文档/任务状态机与统一摄取流水线
 │   ├── modules/rag/          # RAG 运行、引用快照与持久化聊天
 │   ├── modules/users/        # 用户模型、仓储与管理服务
 │   ├── services/             # LLM、RAG、导入器
@@ -155,6 +157,13 @@ LLM_RETURN_REASONING=false
 
 # Retrieval
 TOP_K=3
+
+# Ingestion
+UPLOAD_DIR=data/uploads
+MAX_UPLOAD_BYTES=10485760
+MAX_PDF_PAGES=200
+MAX_INGESTION_TEXT_CHARS=200000
+INGESTION_CHUNK_CHARS=4000
 ```
 
 说明：
@@ -165,6 +174,8 @@ TOP_K=3
 - staging/production 的 `SESSION_SECRET` 必须至少 32 个 UTF-8 字节，`ALLOWED_ORIGINS` 必须显式配置且不能包含 `*`。
 - staging/production 使用 `__Host-mathrag_session`/`__Host-mathrag_csrf`，Cookie 带 `Secure; SameSite=Lax; Path=/`，Session Cookie 额外带 `HttpOnly`。
 - `SESSION_TTL_SECONDS` 必须大于 0，默认 604800 秒（7 天）。
+- `UPLOAD_DIR` 是受控 PDF 根目录；Compose 中固定为持久卷 `/app/data/uploads`。数据库只保存相对路径，API 不返回路径。
+- `MAX_UPLOAD_BYTES`、`MAX_PDF_PAGES`、`MAX_INGESTION_TEXT_CHARS` 和 `INGESTION_CHUNK_CHARS` 都必须大于 0。
 - `/api/v1/chat` 从数据库加载历史，不接受客户端提供的 `history`。
 
 ---
@@ -320,102 +331,44 @@ reindex 会批量调用 Embedding Provider，并把当前模型下成功的 chun
 
 ---
 
-## 知识导入
+## 知识摄取
 
-### 从文本片段抽取知识点 API
-
-接口：`POST /api/knowledge/extract`
-
-请求示例：
-
-```json
-{
-  "text": "一元二次方程 x^2+4x+3=0 可以分解为 (x+1)(x+3)=0。",
-  "category": "quadratic_equation",
-  "save": true
-}
-```
-
-响应会返回抽取出的 `records`。当 `save=true` 时，记录会追加到：
-
-```text
-data/raw/math_knowledge_seed.jsonl
-```
-
-追加后需要重新执行：
-
-```bash
-python -m scripts.validate_seed_jsonl
-python -m scripts.build_kb
-python -m scripts.import_legacy_knowledge
-python -m scripts.reindex_knowledge
-```
+M5 的在线上传和两个 CLI 都调用同一套 `IngestionService`，最终写入 PostgreSQL/pgvector。`data/raw` 与 `data/processed` 仅保留历史迁移输入；新知识不会写入 JSONL。
 
 ### 从公开数学站点导入
+
+`--requested-by` 必须是数据库中的 active admin 用户名。命令同步等待任务完成，失败时返回非零退出码。
 
 ```bash
 python -m scripts.import_math_knowledge \
   --sources wikipedia wikibooks \
   --keywords derivative \
   --limit-per-source 2 \
-  --category calculus
+  --category calculus \
+  --max-chunk-chars 6000 \
+  --delay-seconds 1.0 \
+  --requested-by admin
 ```
 
-常用参数：
-
-| 参数 | 说明 |
-|---|---|
-| `--sources` | 数据源，可选 `proofwiki`、`planetmath`、`wikibooks`、`wikipedia` |
-| `--keywords` | 搜索关键词，可传多个 |
-| `--limit-per-source` | 每个数据源、每个关键词最多取多少条结果，默认 `3` |
-| `--output` | 输出 JSONL，默认 `data/raw/math_knowledge_seed.jsonl` |
-| `--error-output` | 错误输出 JSONL，默认 `data/raw/math_knowledge_import_errors.jsonl` |
-| `--category` | 分类提示 |
-| `--max-chunk-chars` | 每个 LLM chunk 最大字符数，默认 `6000` |
-| `--delay-seconds` | 页面请求间隔，默认 `1.0` 秒 |
+`--sources` 可选 `proofwiki`、`planetmath`、`wikibooks`、`wikipedia`；`--keywords` 与 `--requested-by` 必填。该 CLI 不再提供 `--output` 或 `--error-output`。
 
 ### 从本地 PDF 导入
 
-把 PDF 放入：
-
-```text
-data/data_lake/
-```
-
-仅抽取清洗后的文本 chunk：
-
-```bash
-python -m scripts.import_pdf_knowledge \
-  --data-dir data/data_lake \
-  --text-output data/processed/pdf_text_chunks.jsonl \
-  --max-chunk-chars 3000
-```
-
-抽取文本并调用 LLM 结构化写入知识库：
+将 PDF 放入 `data/data_lake/`，再执行：
 
 ```bash
 python -m scripts.import_pdf_knowledge \
   --data-dir data/data_lake \
   --max-chunks 20 \
-  --max-chunk-chars 3000 \
-  --import-to-knowledge \
-  --category "高中数学"
+  --category "高中数学" \
+  --requested-by admin
 ```
 
-常用参数：
+`--no-recursive` 可关闭子目录扫描；`--max-chunks` 在统一流水线中表示本次最多创建的 PDF 导入任务数。每个文件都经过扩展名、MIME、magic bytes、大小、页数、加密和文本有效性校验。该 CLI 不再生成 text/error/seed JSONL。
 
-| 参数 | 说明 |
-|---|---|
-| `--data-dir` | PDF 目录，默认 `data/data_lake` |
-| `--text-output` | 清洗后的 PDF 文本 chunk JSONL |
-| `--output` | 使用 `--import-to-knowledge` 时写入的种子知识库 |
-| `--error-output` | PDF 导入错误输出 |
-| `--no-recursive` | 不递归扫描子目录 |
-| `--append-text-output` | 追加写入文本 chunk，不覆盖 |
-| `--max-chunk-chars` | 每个文本 chunk 最大字符数，默认 `4000` |
-| `--max-chunks` | 最多处理多少个 chunk，适合小批量试跑 |
-| `--import-to-knowledge` | 启用 LLM 结构化导入 |
-| `--category` | 分类提示 |
+### 文本抽取预览
+
+`POST /api/knowledge/extract` 只保留管理员预览能力。`save=false` 返回抽取结果；`save=true` 固定返回 410，不能绕过统一摄取流水线写入 JSONL。
 
 ---
 
@@ -503,7 +456,16 @@ evaluation 使用同一批 query vectors 对账只读 legacy FAISS 与 pgvector�
 
 ### 回滚
 
-发布前保留数据库备份、上一版本容器镜像和冻结的 `data/index` 工件。发生检索回归时按以下顺序执行：
+发布前必须在同一维护窗口保存 PostgreSQL 与 `upload_data`，两者组成同一个恢复点；只恢复其中一项会造成 document 元数据与 PDF 文件不一致：
+
+```bash
+docker compose exec -T postgres pg_dump -U mathrag -d mathrag -Fc > mathrag.dump
+docker compose exec -T mathrag tar -C /app/data/uploads -czf - . > upload_data.tar.gz
+```
+
+M5 回滚时先停止文档上传、知识写入和导入 CLI，等待运行中任务结束或明确失败，再停止应用并备份上述两项。优先回滚应用镜像；只有确认不再需要 M5 的 document/job/知识 revision 数据后，才在备份数据库上验证 `alembic downgrade 0004_create_identity_conversation_rag_tables`。恢复时先恢复 PostgreSQL，再将匹配的 `upload_data.tar.gz` 解压到空上传卷，最后执行 `alembic upgrade head` 并检查 live/ready。
+
+同时保留上一版本容器镜像和冻结的 `data/index` 工件。发生检索回归时按以下顺序执行：
 
 1. 先按入口网关/负载均衡平台的 runbook 停止新流量，并暂停知识写入入口。
 2. 停止当前应用，数据库保持运行：
@@ -604,6 +566,45 @@ $mathragCsrf = $mathragSession.Cookies.GetCookies('http://127.0.0.1:8000')['math
 ```
 
 `GET /api/v1/auth/me` 返回当前用户；`POST /api/v1/auth/logout` 需要同样的 Origin 与 CSRF 头，并撤销服务端 Session。
+
+### 知识 CRUD
+
+登录用户可读取知识；普通用户的列表和详情只返回 `public+ready`，管理员可读取全部状态和可见性。创建、更新和归档只允许管理员，并要求 Origin 与 CSRF：
+
+```text
+GET    /api/v1/knowledge-items?status=ready&visibility=public&category=代数&page=1&page_size=20
+POST   /api/v1/knowledge-items
+GET    /api/v1/knowledge-items/{item_id}
+PATCH  /api/v1/knowledge-items/{item_id}
+DELETE /api/v1/knowledge-items/{item_id}?revision={revision}
+```
+
+创建请求包含 `category/title/keywords/content/example/steps/difficulty/visibility`。更新请求只提交需要修改的字段，但必须携带当前 `revision`；并发修改时旧 revision 返回 `KNOWLEDGE_REVISION_CONFLICT`/409。DELETE 是带 revision 的逻辑归档，归档后不会再被 RAG 检索。
+
+### PDF 上传与摄取任务
+
+管理员使用登录阶段获得的同一 Session 和 CSRF 值上传 PDF：
+
+```powershell
+$mathragUpload = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/api/v1/documents' `
+  -WebSession $mathragSession -Headers @{Origin=$mathragOrigin; 'X-CSRF-Token'=$mathragCsrf} `
+  -Form @{file=Get-Item 'C:\data\lesson.pdf'; category='高中数学'}
+$mathragJobId = $mathragUpload.job.id
+Invoke-RestMethod -Method Get `
+  -Uri "http://127.0.0.1:8000/api/v1/ingestion-jobs/$mathragJobId" `
+  -WebSession $mathragSession
+```
+
+上传成功返回 202，响应包含安全的 `document` 与初始 `job`，不包含存储路径。客户端轮询 job，直到 `completed`、`failed` 或 `cancelled`；`progress` 范围为 0~100。管理接口为：
+
+```text
+GET  /api/v1/documents?status=ready&page=1&page_size=20
+GET  /api/v1/ingestion-jobs/{job_id}
+POST /api/v1/ingestion-jobs/{job_id}/cancel
+POST /api/v1/ingestion-jobs/{job_id}/retry
+```
+
+cancel 只接受 pending，retry 只接受 failed；两个写操作均要求管理员 Origin 与 CSRF。retry 复用原 job/document/item/chunk，不重复抽取知识。`error_code` 是稳定分类，`error_message` 只包含脱敏摘要。
 
 ### Conversation 与持久化问答
 
@@ -763,6 +764,8 @@ app/frontend/app.js
 - 展示 agentic 检索规划
 - 使用 KaTeX 自动渲染公式
 
+M6 前端应直接消费 M5 契约：登录后保存 Cookie 并从 CSRF Cookie 读取令牌；管理员知识页使用 `/api/v1/knowledge-items` 和 `revision` 做并发保护；上传页以 multipart 调用 `/api/v1/documents`，只展示公开 DTO，按 job id 轮询 `/api/v1/ingestion-jobs/{job_id}`，并仅在 pending/failed 状态分别显示 cancel/retry。前端不得读取 `storage_path`、拼接上传目录，或回退到 JSONL 写入入口。
+
 注意：当前 KaTeX 通过 jsDelivr CDN 引入。如果部署环境不能访问外网，可改为本地托管 KaTeX 静态资源。
 
 ---
@@ -845,6 +848,8 @@ pytest -q
 - Conversation owner 隔离、消息分页与归档
 - `/api/v1/chat` 两段短事务、幂等重放、失败终态和引用快照
 - `/api/knowledge/extract` 保存/预览逻辑
+- `/api/v1/knowledge-items` 权限过滤、revision 冲突、创建/更新/归档与 RAG 可见性
+- `/api/v1/documents` 安全上传，以及 ingestion job 的状态机、取消、失败收口和幂等重试
 - RAG 多查询规划与 Knowledge Search 批量检索
 - PostgreSQL/pgvector 导入、reindex、检索与运行时依赖边界
 - 数学知识导入器

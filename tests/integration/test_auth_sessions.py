@@ -54,7 +54,12 @@ async def exercise_session_lifecycle(database_url: str) -> None:
             assert len(stored.token_hash) == 32
             assert issued.raw_token.encode("utf-8") != stored.token_hash
 
-        await service.logout(issued.session_id, now + timedelta(seconds=2))
+        # 模拟应用容器时钟略落后于 PostgreSQL；撤销时间必须被钳制到 created_at。
+        await service.logout(issued.session_id, now - timedelta(seconds=1))
+        async with session_factory() as session:
+            revoked = await session.get(UserSession, issued.session_id)
+            assert revoked is not None and revoked.revoked_at is not None
+            assert revoked.revoked_at >= revoked.created_at
         with pytest.raises(AppError) as revoked_error:
             await service.resolve(issued.raw_token, now + timedelta(seconds=3))
         assert revoked_error.value.code == "AUTH_SESSION_INVALID"

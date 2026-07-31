@@ -326,6 +326,6 @@ def test_m4_schema_upgrade_and_downgrade_round_trip() -> None:
 
         run_alembic(database_url, "upgrade", "head")
         current = run_alembic(database_url, "current")
-        assert "0004_create_identity_conversation_rag_tables (head)" in current.stdout
+        assert "0005_create_documents_ingestion_jobs (head)" in current.stdout
     finally:
         run_alembic(database_url, "upgrade", "head")

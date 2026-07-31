@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.models import UserSession
@@ -111,14 +111,15 @@ class AuthRepository:
         await self._session.execute(
             update(UserSession)
             .where(UserSession.id == session_id, UserSession.revoked_at.is_(None))
-            .values(revoked_at=now)
+            # 应用与 PostgreSQL 可能有毫秒级时钟偏差，不能写早于创建时间的值。
+            .values(revoked_at=func.greatest(now, UserSession.created_at))
         )
 
     async def revoke_all_for_user(self, user_id: UUID, now: datetime) -> None:
         await self._session.execute(
             update(UserSession)
             .where(UserSession.user_id == user_id, UserSession.revoked_at.is_(None))
-            .values(revoked_at=now)
+            .values(revoked_at=func.greatest(now, UserSession.created_at))
         )
 
 
