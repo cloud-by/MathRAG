@@ -16,6 +16,7 @@ from app.core.middleware import RequestIdMiddleware
 from app.infrastructure.database.session import dispose_engine
 from app.infrastructure.embedding.provider import dispose_embedding_provider
 from app.modules.auth.router import router as auth_router
+from app.modules.conversations.router import router as conversations_router
 from app.modules.system.router import router as system_router
 from app.schemas.chat import HealthResponse
 from app.services.rag_pipeline import reset_rag_pipeline
@@ -84,6 +85,7 @@ def create_app() -> FastAPI:
 
     app.include_router(system_router)
     app.include_router(auth_router)
+    app.include_router(conversations_router)
     app.include_router(chat_router)
     app.include_router(knowledge_router)
 
