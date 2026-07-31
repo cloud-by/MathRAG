@@ -88,3 +88,11 @@ def test_readme_documents_local_compose_database_workflow() -> None:
     assert "mathrag:local" in docker_section
     assert "/health/live" in docker_section
     assert "/health/ready" in docker_section
+
+
+def test_production_compose_requires_security_environment() -> None:
+    compose = (PROJECT_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    mathrag_service = compose.split("  mathrag:", maxsplit=1)[1]
+
+    assert "SESSION_SECRET: ${SESSION_SECRET:?" in mathrag_service
+    assert "ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?" in mathrag_service

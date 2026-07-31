@@ -82,11 +82,11 @@ async def cleanup(session: AsyncSession) -> None:
 
 
 async def assert_database_restored(session: AsyncSession) -> None:
-    """确认测试库恢复到迁移 0003 且知识表均为空。"""
+    """确认测试库恢复到当前迁移 head 且知识表均为空。"""
     revision = await session.scalar(text("SELECT version_num FROM alembic_version"))
     item_count = await session.scalar(select(func.count()).select_from(KnowledgeItem))
     chunk_count = await session.scalar(select(func.count()).select_from(KnowledgeChunk))
-    assert revision == "0003_enforce_vector_readiness"
+    assert revision == "0004_create_identity_conversation_rag_tables"
     assert item_count == 0
     assert chunk_count == 0
 

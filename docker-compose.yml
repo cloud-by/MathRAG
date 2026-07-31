@@ -27,6 +27,8 @@ services:
     environment:
       APP_ENV: production
       APP_WORKERS: 1
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be at least 32 UTF-8 bytes}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS must be explicit}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mathrag}:${POSTGRES_PASSWORD:-mathrag-dev-only}@postgres:5432/${POSTGRES_DB:-mathrag}
     ports:
       - "127.0.0.1:8000:8000"

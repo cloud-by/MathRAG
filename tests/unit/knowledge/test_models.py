@@ -53,6 +53,7 @@ def test_knowledge_item_table_maps_required_columns_and_constraints() -> None:
     )
     assert owner_foreign_key.name == "fk_knowledge_items_owner_id_users"
     assert owner_foreign_key.ondelete == "SET NULL"
+    assert owner_foreign_key.elements[0].column.table.name == "users"
     assert index_columns(table)["ix_knowledge_items_owner_id"] == ("owner_id",)
     assert constraint_names(table, CheckConstraint) == {
         "ck_knowledge_items_difficulty",

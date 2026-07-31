@@ -385,13 +385,13 @@ async def cleanup(session: AsyncSession) -> None:
 
 
 async def assert_restored(session_factory: async_sessionmaker[AsyncSession]) -> None:
-    """确认数据库回到 0003/0/0。"""
+    """确认数据库回到当前迁移 head 且知识表为空。"""
     async with session_factory() as session:
         assert (
             await session.scalar(text("SELECT version_num FROM alembic_version")),
             await session.scalar(select(func.count()).select_from(KnowledgeItem)),
             await session.scalar(select(func.count()).select_from(KnowledgeChunk)),
-        ) == ("0003_enforce_vector_readiness", 0, 0)
+        ) == ("0004_create_identity_conversation_rag_tables", 0, 0)
 
 
 async def exercise_cli_double_run(database_url: str) -> None:

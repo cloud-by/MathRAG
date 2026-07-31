@@ -22,6 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.database.base import Base
 from app.infrastructure.database.types import UTCDateTime
+from app.modules.users.models import User as _User  # 注册 owner_id 外键目标。
 
 
 class KnowledgeItem(Base):

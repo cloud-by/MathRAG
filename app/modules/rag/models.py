@@ -20,6 +20,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base
 from app.infrastructure.database.types import UTCDateTime
+from app.modules.conversations.models import (
+    Conversation as _Conversation,
+    Message as _Message,
+)
+from app.modules.knowledge.models import KnowledgeChunk as _KnowledgeChunk
 
 
 class RAGRun(Base):

@@ -183,13 +183,13 @@ async def stored_dimensions(
 async def assert_database_restored(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """确认收尾状态精确为迁移 0003 且两张知识表为空。"""
+    """确认收尾状态精确为当前迁移 head 且两张知识表为空。"""
     async with session_factory() as session:
         revision = await session.scalar(text("SELECT version_num FROM alembic_version"))
         item_count = await session.scalar(select(func.count()).select_from(KnowledgeItem))
         chunk_count = await session.scalar(select(func.count()).select_from(KnowledgeChunk))
         assert (revision, item_count, chunk_count) == (
-            "0003_enforce_vector_readiness",
+            "0004_create_identity_conversation_rag_tables",
             0,
             0,
         )
