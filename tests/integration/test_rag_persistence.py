@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.core.errors import AppError
 from app.modules.auth.service import AuthenticatedPrincipal
 from app.modules.conversations.models import Conversation, Message
 from app.modules.knowledge.models import KnowledgeChunk, KnowledgeItem
@@ -64,6 +65,33 @@ class FakeExecutor:
                 "",
             )
         return self.execution
+
+
+class BlockingExecutor:
+    def __init__(self) -> None:
+        self.entered = asyncio.Event()
+        self.release = asyncio.Event()
+        self.calls = 0
+
+    async def execute(self, *, question, history, top_k) -> RAGExecution:
+        self.calls += 1
+        self.entered.set()
+        await self.release.wait()
+        return RAGExecution(
+            question=question,
+            answer="并发回答",
+            steps=(),
+            used_knowledge=(),
+            related_questions=(),
+            hits=(),
+            strategy="single",
+            retrieval_queries=(question,),
+            top_k=top_k,
+            llm_model="llm-test",
+            embedding_model="embedding-test",
+            reasoning_content=None,
+            model_metadata={},
+        )
 
 
 async def exercise_persistence(database_url: str) -> None:
@@ -282,3 +310,104 @@ def test_rag_persistence_replays_completed_result_and_keeps_snapshot() -> None:
     database_url = require_test_database_url(database_url, os.getenv("DATABASE_URL"))
 
     asyncio.run(exercise_persistence(database_url))
+
+
+async def exercise_concurrent_idempotency(database_url: str) -> None:
+    engine = create_async_engine(database_url)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+    user_id = uuid4()
+    conversation_id = uuid4()
+    client_request_id = uuid4()
+    now = datetime.now(UTC)
+    try:
+        async with session_factory() as session:
+            async with session.begin():
+                session.add(
+                    User(
+                        id=user_id,
+                        username=f"concurrent-{user_id.hex[:10]}",
+                        password_hash="hash",
+                    )
+                )
+                await session.flush()
+                session.add(
+                    Conversation(
+                        id=conversation_id,
+                        user_id=user_id,
+                        title="并发会话",
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+
+        principal = AuthenticatedPrincipal(
+            user_id=user_id,
+            session_id=uuid4(),
+            username="concurrent-user",
+            role="user",
+            session_token_hash=b"hash",
+        )
+        executor = BlockingExecutor()
+        service = ChatPersistenceService(
+            session_factory,
+            executor,
+            lambda: datetime.now(UTC),
+        )
+        first_task = asyncio.create_task(
+            service.chat(
+                principal=principal,
+                conversation_id=conversation_id,
+                client_request_id=client_request_id,
+                question="并发问题",
+                top_k=2,
+            )
+        )
+        await asyncio.wait_for(executor.entered.wait(), timeout=5)
+        try:
+            with pytest.raises(AppError) as captured:
+                await service.chat(
+                    principal=principal,
+                    conversation_id=conversation_id,
+                    client_request_id=client_request_id,
+                    question="并发问题",
+                    top_k=2,
+                )
+        finally:
+            executor.release.set()
+        assert captured.value.code == "RAG_REQUEST_IN_PROGRESS"
+        first = await asyncio.wait_for(first_task, timeout=5)
+        replay = await service.chat(
+            principal=principal,
+            conversation_id=conversation_id,
+            client_request_id=client_request_id,
+            question="并发问题",
+            top_k=2,
+        )
+        assert replay == first
+        assert executor.calls == 1
+
+        async with session_factory() as session:
+            assert await session.scalar(
+                select(func.count()).select_from(RAGRun).where(
+                    RAGRun.conversation_id == conversation_id
+                )
+            ) == 1
+            assert await session.scalar(
+                select(func.count()).select_from(Message).where(
+                    Message.conversation_id == conversation_id
+                )
+            ) == 2
+    finally:
+        async with session_factory() as session:
+            async with session.begin():
+                await session.execute(delete(User).where(User.id == user_id))
+        await engine.dispose()
+
+
+def test_concurrent_same_client_request_executes_only_once() -> None:
+    database_url = os.getenv("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL 未配置")
+    database_url = require_test_database_url(database_url, os.getenv("DATABASE_URL"))
+
+    asyncio.run(exercise_concurrent_idempotency(database_url))
