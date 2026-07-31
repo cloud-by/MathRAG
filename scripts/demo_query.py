@@ -11,6 +11,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.core.config import settings
+from app.infrastructure.database.session import dispose_engine
+from app.infrastructure.embedding.provider import dispose_embedding_provider
 from app.modules.knowledge.search_service import (
     KnowledgeSearchService,
     build_knowledge_search_service,
@@ -128,26 +130,44 @@ def parse_args() -> argparse.Namespace:
 
 async def async_main() -> None:
     args = parse_args()
-    search_service = build_knowledge_search_service()
+    business_error: BaseException | None = None
+    try:
+        search_service = build_knowledge_search_service()
 
-    if args.interactive:
-        await interactive_loop(
+        if args.interactive:
+            await interactive_loop(
+                top_k=args.top_k,
+                show_context=args.show_context,
+                search_service=search_service,
+            )
+            return
+
+        question = args.question.strip()
+        if not question:
+            question = "x^2+4x+3=0 怎么解？"
+
+        await run_once(
+            question=question,
             top_k=args.top_k,
             show_context=args.show_context,
             search_service=search_service,
         )
-        return
-
-    question = args.question.strip()
-    if not question:
-        question = "x^2+4x+3=0 怎么解？"
-
-    await run_once(
-        question=question,
-        top_k=args.top_k,
-        show_context=args.show_context,
-        search_service=search_service,
-    )
+    except BaseException as exc:
+        business_error = exc
+        raise
+    finally:
+        cleanup_error: BaseException | None = None
+        try:
+            await dispose_embedding_provider()
+        except BaseException as exc:
+            cleanup_error = exc
+        try:
+            await dispose_engine()
+        except BaseException as exc:
+            if cleanup_error is None:
+                cleanup_error = exc
+        if business_error is None and cleanup_error is not None:
+            raise cleanup_error
 
 
 def main() -> None:

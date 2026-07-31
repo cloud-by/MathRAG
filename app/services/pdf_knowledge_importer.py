@@ -35,7 +35,7 @@ def require_pypdf() -> Any:
         from pypdf import PdfReader
     except ImportError as exc:
         raise RuntimeError(
-            "PDF extraction requires pypdf. Install dependencies with: pip install -r requirements.txt"
+            "PDF extraction requires pypdf. Install dependencies with: pip install -r requirements.lock.txt"
         ) from exc
     return PdfReader
 

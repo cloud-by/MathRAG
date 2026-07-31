@@ -53,7 +53,11 @@ def test_extract_knowledge_saves_records(monkeypatch) -> None:
     assert data["saved_count"] == 1
     assert data["records"][0]["id"] == "k9999"
     assert data["records"][0]["title"] == "一次函数的概念"
-    assert any("python -m scripts.build_kb" in step for step in data["next_steps"])
+    assert data["next_steps"] == [
+        "Run: python -m scripts.build_kb",
+        "Run: python -m scripts.import_legacy_knowledge",
+        "Run: python -m scripts.reindex_knowledge",
+    ]
 
 
 def test_extract_knowledge_can_preview_without_saving(monkeypatch) -> None:

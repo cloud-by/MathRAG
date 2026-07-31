@@ -85,14 +85,14 @@ Windows PowerShell：
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements.lock.txt
 ```
 
 Linux / macOS：
 
 ```bash
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.lock.txt
 ```
 
 ---
@@ -477,9 +477,47 @@ evaluation 使用同一批 query vectors 对账只读 legacy FAISS 与 pgvector�
 
 ### 回滚
 
-- 发布前保留数据库备份和上一版本容器镜像；应用回滚优先重新部署上一镜像。
-- 数据迁移需要回滚时，按 Alembic 版本和数据库备份执行，不修改冻结的 evaluation 工件。
-- `data/index` 中的 FAISS/id_map 只作为历史审计或旧版本紧急回滚输入；当前 runtime lock 不含 FAISS，不能直接切回旧在线链路。
+发布前保留数据库备份、上一版本容器镜像和冻结的 `data/index` 工件。发生检索回归时按以下顺序执行：
+
+1. 先按入口网关/负载均衡平台的 runbook 停止新流量，并暂停知识写入入口。
+2. 停止当前应用，数据库保持运行：
+
+```bash
+docker compose stop mathrag
+```
+
+3. 优先部署上一版本镜像：
+
+```bash
+export MATHRAG_ROLLBACK_IMAGE="<上一版本镜像>"
+docker pull "${MATHRAG_ROLLBACK_IMAGE}"
+docker image tag "${MATHRAG_ROLLBACK_IMAGE}" mathrag:local
+docker compose up -d --no-build mathrag
+```
+
+没有可用镜像时，可从 M2 固定基点构建；最终 baseline 会记录验收时的精确回滚 SHA：
+
+```bash
+git switch --detach cd77635
+docker build --pull=false -t mathrag:local .
+docker compose up -d --no-build mathrag
+```
+
+4. 冻结的旧 FAISS 工件只读使用，禁止重建或覆盖：
+
+```bash
+chmod a-w data/index/faiss.index data/index/id_map.json
+```
+
+5. 使用回滚环境变量验证存活和就绪状态，不在文档中固化真实地址：
+
+```bash
+export MATHRAG_BASE_URL="<回滚环境地址>"
+curl -fsS "${MATHRAG_BASE_URL}/health/live"
+curl -fsS "${MATHRAG_BASE_URL}/health/ready"
+```
+
+两个 health 检查都成功后才恢复入口流量和知识写入。禁止同一在线版本长期并行 FAISS 与 pgvector 两条检索路径；数据迁移需要回滚时按 Alembic 版本和数据库备份单独执行，不修改冻结的 evaluation 工件。
 
 ---
 
@@ -681,7 +719,16 @@ docker compose down
 
 ## 测试
 
+仅安装 `requirements.lock.txt` 的纯 runtime 环境不收集 FAISS evaluation 用例：
+
 ```bash
+pytest -q --ignore=tests/evaluation --ignore=tests/test_retrieval_baseline.py
+```
+
+运行完整测试前安装包含 FAISS 的 evaluation 锁：
+
+```bash
+pip install -r requirements-evaluation.lock.txt
 pytest -q
 ```
 
@@ -713,7 +760,7 @@ python -m scripts.reindex_knowledge
 说明当前 Python 环境没有安装项目依赖。先激活虚拟环境并安装依赖：
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.lock.txt
 ```
 
 ### `LLM_API_KEY` 或 `EMBEDDING_API_KEY` 缺失
