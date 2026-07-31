@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import List
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
+from openai import APIError, APIStatusError, AuthenticationError
 
 from app.main import app
 from app.modules.auth.dependencies import require_admin_csrf
@@ -79,9 +81,42 @@ def test_extract_knowledge_can_preview_without_saving(monkeypatch) -> None:
     assert data["saved_count"] == 0
     assert data["records"][0]["title"] == "一次函数的概念"
     assert data["next_steps"] == []
+    assert "knowledge_path" not in data
 
 
 def test_extract_knowledge_rejects_empty_text() -> None:
     response = client.post("/api/knowledge/extract", json={"text": "   "})
 
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize("error_type", ["authentication", "status", "api"])
+def test_extract_knowledge_does_not_echo_provider_error(
+    monkeypatch,
+    error_type: str,
+) -> None:
+    marker = "knowledge-provider-sensitive-marker"
+    request = httpx.Request("POST", "https://provider.invalid")
+    response = httpx.Response(
+        500,
+        request=request,
+        json={"error": {"message": marker}},
+    )
+
+    def fail_extract(*args, **kwargs):
+        if error_type == "authentication":
+            raise AuthenticationError(marker, response=response, body=response.json())
+        if error_type == "status":
+            raise APIStatusError(marker, response=response, body=response.json())
+        raise APIError(marker, request, body=None)
+
+    monkeypatch.setattr("app.api.knowledge.extract_knowledge_records", fail_extract)
+
+    api_response = client.post(
+        "/api/knowledge/extract",
+        json={"text": "一次函数", "save": False},
+    )
+
+    assert api_response.status_code == 502
+    assert api_response.json() == {"detail": "LLM API 调用失败。"}
+    assert marker not in api_response.text

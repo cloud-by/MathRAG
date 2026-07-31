@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
@@ -11,6 +12,7 @@ from openai import APIError, APIStatusError
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.main import app
+from app.core.config import settings as app_settings
 from app.modules.knowledge.errors import EmbeddingUnavailableError
 
 
@@ -106,6 +108,39 @@ def test_chat_success_returns_complete_response(monkeypatch: pytest.MonkeyPatch)
     assert ref["keywords"] == ["代数式", "表达式", "字母表示数"]
     assert ref["steps"] == ["步骤1：识别结构", "步骤2：理解含义"]
     assert "reasoning_content" in data
+    assert response.headers["Deprecation"] == "true"
+    assert response.headers["Link"] == '</api/v1/chat>; rel="successor-version"'
+
+
+def test_legacy_chat_is_gone_outside_development(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called = False
+
+    async def mock_chat_with_rag(**kwargs):
+        nonlocal called
+        called = True
+        return build_mock_result()
+
+    monkeypatch.setattr("app.api.chat.chat_with_rag", mock_chat_with_rag)
+    monkeypatch.setattr(
+        "app.api.chat.settings",
+        replace(
+            app_settings,
+            APP_ENV="production",
+            SESSION_SECRET="s" * 32,
+            ALLOWED_ORIGINS=("https://mathrag.example",),
+        ),
+    )
+
+    response = client.post(
+        "/api/chat",
+        json={"question": "什么是代数式？", "history": [], "top_k": 3},
+    )
+
+    assert response.status_code == 410
+    assert response.json() == {"detail": "旧聊天接口已停用，请使用 /api/v1/chat。"}
+    assert called is False
 
 
 def test_chat_history_is_passed_as_plain_dicts(monkeypatch: pytest.MonkeyPatch) -> None:

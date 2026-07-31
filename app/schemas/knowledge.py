@@ -110,5 +110,4 @@ class KnowledgeExtractRequest(BaseModel):
 class KnowledgeExtractResponse(BaseModel):
     records: List[KnowledgeRecord]
     saved_count: int = 0
-    knowledge_path: str
     next_steps: List[str] = Field(default_factory=list)

@@ -12,7 +12,7 @@ from openai import (
 
 from app.core.errors import AppError
 from app.modules.auth.dependencies import AuthenticatedPrincipal, require_admin_csrf
-from app.services.knowledge_extractor import DEFAULT_KNOWLEDGE_PATH, extract_knowledge_records
+from app.services.knowledge_extractor import extract_knowledge_records
 from app.schemas.knowledge import KnowledgeExtractRequest, KnowledgeExtractResponse
 
 
@@ -38,17 +38,19 @@ def extract_knowledge(
         return KnowledgeExtractResponse(
             records=records,
             saved_count=0,
-            knowledge_path=str(DEFAULT_KNOWLEDGE_PATH),
             next_steps=[],
         )
 
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="抽取输入或结果格式无效。",
+        ) from exc
 
     except AuthenticationError as exc:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="LLM API authentication failed. Check LLM_API_KEY.",
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="LLM API 调用失败。",
         ) from exc
 
     except RateLimitError as exc:
@@ -70,19 +72,13 @@ def extract_knowledge(
         ) from exc
 
     except APIStatusError as exc:
-        message = "LLM API returned an error."
-        try:
-            payload = exc.response.json()
-            if isinstance(payload, dict):
-                error_info = payload.get("error", {})
-                if isinstance(error_info, dict):
-                    message = error_info.get("message") or message
-        except Exception:
-            pass
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=message) from exc
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="LLM API 调用失败。",
+        ) from exc
 
     except APIError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"LLM API call failed: {exc}",
+            detail="LLM API 调用失败。",
         ) from exc

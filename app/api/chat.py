@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 from openai import (
     APIConnectionError,
     APIError,
@@ -13,6 +13,7 @@ from openai import (
 )
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.config import settings
 from app.modules.knowledge.errors import EmbeddingUnavailableError
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.rag_pipeline import RAGInputError, chat_with_rag
@@ -41,8 +42,20 @@ def _history_to_dicts(history: List[Any]) -> List[Dict[str, str]]:
     return normalized_history
 
 
-@router.post("/chat", response_model=ChatResponse, summary="数学 RAG 问答")
-async def chat(request: ChatRequest) -> ChatResponse:
+@router.post(
+    "/chat",
+    response_model=ChatResponse,
+    summary="数学 RAG 问答",
+    deprecated=True,
+)
+async def chat(request: ChatRequest, response: Response) -> ChatResponse:
+    if settings.APP_ENV != "development":
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="旧聊天接口已停用，请使用 /api/v1/chat。",
+        )
+    response.headers["Deprecation"] = "true"
+    response.headers["Link"] = '</api/v1/chat>; rel="successor-version"'
     try:
         result = await chat_with_rag(
             question=request.question,

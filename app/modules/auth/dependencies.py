@@ -6,7 +6,8 @@ import hmac
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
-from fastapi import Depends, Request
+from fastapi import Depends, Request, Security
+from fastapi.security import APIKeyCookie
 
 from app.core.config import Settings, settings
 from app.core.errors import AppError
@@ -16,6 +17,11 @@ from app.modules.auth.service import AuthService, AuthenticatedPrincipal
 
 
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+SESSION_COOKIE_SCHEME = APIKeyCookie(
+    name=settings.session_cookie_name,
+    scheme_name="SessionCookie",
+    auto_error=False,
+)
 
 
 def get_auth_service() -> AuthService:
@@ -28,9 +34,9 @@ def get_auth_service() -> AuthService:
 
 async def get_current_principal(
     request: Request,
+    raw_token: str | None = Security(SESSION_COOKIE_SCHEME),
     service: AuthService = Depends(get_auth_service),
 ) -> AuthenticatedPrincipal:
-    raw_token = request.cookies.get(settings.session_cookie_name)
     if not raw_token:
         raise _invalid_session()
     return await service.resolve(raw_token, datetime.now(UTC))
@@ -38,9 +44,9 @@ async def get_current_principal(
 
 async def get_logout_principal(
     request: Request,
+    raw_token: str | None = Security(SESSION_COOKIE_SCHEME),
     service: AuthService = Depends(get_auth_service),
 ) -> AuthenticatedPrincipal:
-    raw_token = request.cookies.get(settings.session_cookie_name)
     if not raw_token:
         raise _invalid_session()
     return await service.resolve_for_logout(raw_token)
