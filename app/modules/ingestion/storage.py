@@ -119,6 +119,8 @@ class UploadStorage:
         self._max_pages = max_pages
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._uuid_factory = uuid_factory or uuid4
+        # 记录本实例成功发布文件的物理身份，清理时不误删同路径替换文件。
+        self._owned_uploads: dict[str, tuple[int, int]] = {}
 
     async def save_upload(self, upload: UploadReadable) -> StoredUpload:
         """流式校验、摘要并保存上传；失败或取消不会遗留文件。"""
@@ -175,7 +177,10 @@ class UploadStorage:
                 original_name=original_name,
                 mime_type=PDF_MIME_TYPE,
             )
-            self._publish_no_replace(part_path, final_path)
+            self._owned_uploads[relative_path] = self._publish_no_replace(
+                part_path,
+                final_path,
+            )
             return stored
         except asyncio.CancelledError:
             if part_created:
@@ -189,6 +194,26 @@ class UploadStorage:
             if part_created:
                 self._remove_if_exists(part_path)
             raise DocumentStorageError() from None
+
+    async def delete_upload(self, relative_path: str) -> None:
+        """删除本实例刚保存的文件，拒绝越界、非本次或已被替换的路径。"""
+        final_path = resolve_stored_path(self._root, relative_path)
+        expected_identity = self._owned_uploads.get(relative_path)
+        if expected_identity is None:
+            raise DocumentPathError()
+
+        try:
+            await asyncio.to_thread(
+                self._delete_if_identity_matches,
+                final_path,
+                expected_identity,
+            )
+        finally:
+            self._owned_uploads.pop(relative_path, None)
+
+    def release_upload(self, relative_path: str) -> None:
+        """数据库提交成功后仅释放清理所有权，不删除已持久化文件。"""
+        self._owned_uploads.pop(relative_path, None)
 
     async def _validate_pdf(self, part_path: Path) -> None:
         """在线程中解析完整 PDF；取消时等待线程退出后再清理临时文件。"""
@@ -207,18 +232,43 @@ class UploadStorage:
             raise
 
     @staticmethod
-    def _publish_no_replace(part_path: Path, final_path: Path) -> None:
+    def _publish_no_replace(
+        part_path: Path,
+        final_path: Path,
+    ) -> tuple[int, int]:
         """以原子硬链接发布文件，绝不覆盖并发创建的目标。"""
         final_created = False
         try:
             os.link(part_path, final_path)
             final_created = True
+            stat = final_path.stat()
             part_path.unlink()
+            return stat.st_dev, stat.st_ino
         except OSError:
             if final_created:
                 # 仅回滚已确认由本调用创建的硬链接，不删除竞争方文件。
                 with suppress(OSError):
                     final_path.unlink()
+            raise DocumentStorageError() from None
+
+    @staticmethod
+    def _delete_if_identity_matches(
+        path: Path,
+        expected_identity: tuple[int, int],
+    ) -> None:
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            return
+        except OSError:
+            raise DocumentStorageError() from None
+        if (stat.st_dev, stat.st_ino) != expected_identity:
+            raise DocumentPathError()
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return
+        except OSError:
             raise DocumentStorageError() from None
 
     @staticmethod

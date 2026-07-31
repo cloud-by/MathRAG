@@ -91,3 +91,47 @@ class DocumentStorageError(AppError):
             message="文档存储暂时不可用。",
             status_code=503,
         )
+
+
+class DocumentDuplicateError(AppError):
+    """同一管理员提交了重复内容，或内部文档任务已存在。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="DOCUMENT_DUPLICATE",
+            message="该文档已经存在。",
+            status_code=409,
+        )
+
+
+class IngestionJobNotFoundError(AppError):
+    """导入任务不存在。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="INGESTION_JOB_NOT_FOUND",
+            message="导入任务不存在。",
+            status_code=404,
+        )
+
+
+class IngestionJobStateConflictError(AppError):
+    """导入任务当前状态不允许请求的转换。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="INGESTION_JOB_STATE_CONFLICT",
+            message="导入任务状态已变化，请刷新后重试。",
+            status_code=409,
+        )
+
+
+class IngestionPersistenceError(AppError):
+    """导入元数据持久化失败，不泄露数据库异常。"""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="INGESTION_PERSISTENCE_FAILED",
+            message="导入任务暂时无法保存。",
+            status_code=503,
+        )

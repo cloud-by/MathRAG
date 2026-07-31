@@ -430,3 +430,59 @@ def test_save_upload_does_not_delete_stale_part_owned_by_another_call(tmp_path: 
 
     assert stale_part.read_bytes() == b"another-call"
     assert not list(tmp_path.rglob("*.pdf"))
+
+
+def test_delete_upload_removes_only_the_saved_relative_path(tmp_path: Path) -> None:
+    storage = _storage(tmp_path)
+    other = tmp_path / "2026" / "07" / "other.pdf"
+    other.parent.mkdir(parents=True)
+    other.write_bytes(b"other")
+    stored = asyncio.run(
+        storage.save_upload(
+            FakeUpload("owned.pdf", "application/pdf", _pdf_bytes())
+        )
+    )
+    saved = resolve_stored_path(tmp_path, stored.relative_path)
+
+    asyncio.run(storage.delete_upload(stored.relative_path))
+
+    assert not saved.exists()
+    assert other.read_bytes() == b"other"
+
+
+def test_delete_upload_rejects_escape_without_deleting_external_file(tmp_path: Path) -> None:
+    outside = tmp_path / "outside.pdf"
+    outside.write_bytes(b"external")
+
+    with pytest.raises(DocumentPathError):
+        asyncio.run(_storage(tmp_path / "uploads").delete_upload("../outside.pdf"))
+
+    assert outside.read_bytes() == b"external"
+
+
+def test_delete_upload_refuses_unowned_file_inside_root(tmp_path: Path) -> None:
+    unowned = tmp_path / "2026" / "07" / "unowned.pdf"
+    unowned.parent.mkdir(parents=True)
+    unowned.write_bytes(b"another request")
+
+    with pytest.raises(DocumentPathError):
+        asyncio.run(_storage(tmp_path).delete_upload("2026/07/unowned.pdf"))
+
+    assert unowned.read_bytes() == b"another request"
+
+
+def test_release_upload_forgets_ownership_without_deleting_file(tmp_path: Path) -> None:
+    storage = _storage(tmp_path)
+    stored = asyncio.run(
+        storage.save_upload(
+            FakeUpload("committed.pdf", "application/pdf", _pdf_bytes())
+        )
+    )
+    final_path = resolve_stored_path(tmp_path, stored.relative_path)
+
+    storage.release_upload(stored.relative_path)
+
+    assert final_path.exists()
+    assert storage._owned_uploads == {}
+    with pytest.raises(DocumentPathError):
+        asyncio.run(storage.delete_upload(stored.relative_path))
