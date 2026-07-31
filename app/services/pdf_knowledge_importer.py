@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 from app.core.config import settings
+from app.modules.ingestion.extractors import extract_pdf_text
 from app.services.math_knowledge_importer import (
     SourceDocument,
     TextChunk,
     chunk_text,
-    clean_plain_text,
     transform_chunk,
     write_jsonl,
 )
@@ -30,16 +30,6 @@ class PDFExtractResult:
     error_output: Path
 
 
-def require_pypdf() -> Any:
-    try:
-        from pypdf import PdfReader
-    except ImportError as exc:
-        raise RuntimeError(
-            "PDF extraction requires pypdf. Install dependencies with: pip install -r requirements.lock.txt"
-        ) from exc
-    return PdfReader
-
-
 def iter_pdf_paths(data_dir: Path, recursive: bool = True) -> List[Path]:
     if not data_dir.exists():
         raise FileNotFoundError(f"PDF data lake directory not found: {data_dir}")
@@ -47,39 +37,15 @@ def iter_pdf_paths(data_dir: Path, recursive: bool = True) -> List[Path]:
     return sorted(path for path in data_dir.glob(pattern) if path.is_file())
 
 
-def _metadata_value(metadata: Any, key: str) -> str:
-    if not metadata:
-        return ""
-    try:
-        value = metadata.get(key)
-    except AttributeError:
-        value = getattr(metadata, key.strip("/"), "")
-    return str(value or "").strip()
-
-
 def extract_pdf_document(path: Path) -> SourceDocument:
-    PdfReader = require_pypdf()
-    reader = PdfReader(str(path))
-    metadata = getattr(reader, "metadata", None)
-    title = _metadata_value(metadata, "/Title") or path.stem
-
-    page_texts: List[str] = []
-    for page_index, page in enumerate(reader.pages, start=1):
-        try:
-            page_text = page.extract_text() or ""
-        except Exception as exc:
-            page_text = f"\n[page {page_index} extraction failed: {exc}]\n"
-        page_text = clean_plain_text(page_text)
-        if page_text:
-            page_texts.append(f"第 {page_index} 页\n{page_text}")
-
-    text = clean_plain_text("\n\n".join(page_texts))
+    extracted = extract_pdf_text(path, max_pages=settings.MAX_PDF_PAGES)
     return SourceDocument(
         source_name="local_pdf",
-        source_url=str(path.resolve()),
-        title=title,
+        # 仅记录逻辑文件名；绝对路径只允许存在于受控存储内部。
+        source_url=path.name,
+        title=extracted.title or path.stem,
         license="local file; check the original PDF license before redistribution",
-        text=text,
+        text=extracted.text,
     )
 
 

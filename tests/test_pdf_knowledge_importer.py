@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 
+from app.core.config import settings
 from app.services.math_knowledge_importer import SourceDocument
 from app.services.pdf_knowledge_importer import (
     build_pdf_text_chunks,
+    extract_pdf_document,
     import_pdf_knowledge,
     write_pdf_text_chunks,
 )
@@ -89,3 +91,32 @@ def test_import_pdf_knowledge_can_call_transform(monkeypatch, tmp_path) -> None:
     assert result.saved_records == 1
     assert len(calls) == 1
     assert calls[0]["category"] == "导数"
+
+
+def test_extract_pdf_document_reuses_controlled_extractor_without_absolute_source(
+    monkeypatch, tmp_path
+) -> None:
+    pdf_path = tmp_path / "private" / "lesson.pdf"
+    pdf_path.parent.mkdir()
+    pdf_path.write_bytes(b"%PDF-placeholder")
+
+    class Result:
+        text = "第 1 页\n函数定义"
+        page_count = 1
+        title = "函数教材"
+
+    calls = []
+
+    def fake_extract(path, *, max_pages):
+        calls.append((path, max_pages))
+        return Result()
+
+    monkeypatch.setattr("app.services.pdf_knowledge_importer.extract_pdf_text", fake_extract)
+
+    document = extract_pdf_document(pdf_path)
+
+    assert calls == [(pdf_path, settings.MAX_PDF_PAGES)]
+    assert document.title == "函数教材"
+    assert document.text == "第 1 页\n函数定义"
+    assert document.source_url == "lesson.pdf"
+    assert str(pdf_path.resolve()) not in document.source_url
