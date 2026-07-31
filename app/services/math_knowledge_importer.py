@@ -15,7 +15,11 @@ from pydantic import ValidationError
 
 from app.core.config import settings
 from app.schemas.knowledge import KnowledgeRecord, SEED_FIELD_ORDER
-from app.services.knowledge_extractor import append_records, generate_next_ids
+from app.services.knowledge_extractor import (
+    append_records,
+    generate_next_ids,
+    normalize_drafts,
+)
 from app.services.llm_service import chat_json
 
 
@@ -469,16 +473,14 @@ def transform_chunk(
     try:
         response = chat_json(messages=build_transform_messages(chunk, category), temperature=0.1)
         raw_response = response.data
-        items = response.data.get("items")
-        if not isinstance(items, list) or not items:
-            raise ValueError("LLM response must contain a non-empty items list")
-
-        next_ids = generate_next_ids(len(items), output_path)
-        records: List[KnowledgeRecord] = []
-        for index, item in enumerate(items):
-            if not isinstance(item, dict):
-                raise ValueError(f"items[{index}] is not an object")
-            records.append(normalize_ai_item(item, next_ids[index], category))
+        drafts = normalize_drafts(response.data, category)
+        next_ids = generate_next_ids(len(drafts), output_path)
+        records = [
+            KnowledgeRecord(id=item_id, **draft.to_values())
+            for item_id, draft in zip(next_ids, drafts, strict=True)
+        ]
+        for record in records:
+            validate_chinese_record(record)
 
         append_records(records, output_path)
         return records

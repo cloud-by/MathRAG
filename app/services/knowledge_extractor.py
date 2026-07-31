@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Mapping
 
 from app.core.config import settings
 from app.schemas.knowledge import KnowledgeRecord
@@ -25,6 +26,31 @@ DIFFICULTY_ALIASES = {
     "较难": "hard",
     "hard": "hard",
 }
+
+
+@dataclass(frozen=True)
+class KnowledgeDraft:
+    """不含 JSONL 遗留 id 的知识抽取纯数据。"""
+
+    category: str
+    title: str
+    keywords: tuple[str, ...]
+    content: str
+    example: str
+    steps: tuple[str, ...]
+    difficulty: str
+
+    def to_values(self) -> dict[str, object]:
+        """返回可直接用于 PostgreSQL 知识条目的字段副本。"""
+        return {
+            "category": self.category,
+            "title": self.title,
+            "keywords": list(self.keywords),
+            "content": self.content,
+            "example": self.example,
+            "steps": list(self.steps),
+            "difficulty": self.difficulty,
+        }
 
 
 def _normalize_text(value: Any) -> str:
@@ -174,36 +200,65 @@ def _normalize_raw_item(raw: Dict[str, Any], item_id: str, hints: Dict[str, str 
     return KnowledgeRecord(**record)
 
 
+def _normalize_draft(raw: Mapping[str, Any], category: str | None) -> KnowledgeDraft:
+    """复用旧 schema 校验规则，但不生成或读取任何 JSONL id。"""
+    record = _normalize_raw_item(dict(raw), "k0000", {"category": category})
+    return KnowledgeDraft(
+        category=record.category,
+        title=record.title,
+        keywords=tuple(record.keywords),
+        content=record.content,
+        example=record.example,
+        steps=tuple(record.steps),
+        difficulty=record.difficulty,
+    )
+
+
+def normalize_drafts(
+    data: Mapping[str, Any],
+    category: str | None = None,
+) -> List[KnowledgeDraft]:
+    """把 LLM JSON 对象转换为与持久化介质无关的知识草稿。"""
+    items = data.get("items")
+    if not isinstance(items, list) or not items:
+        raise ValueError("model response must contain a non-empty items list")
+
+    drafts = [
+        _normalize_draft(raw, category)
+        for raw in items
+        if isinstance(raw, Mapping)
+    ]
+    if not drafts:
+        raise ValueError("no valid knowledge records were extracted")
+    return drafts
+
+
+def extract_knowledge_drafts(
+    text: str,
+    category: str | None = None,
+) -> List[KnowledgeDraft]:
+    """从正文抽取知识草稿；在线导入不会访问 seed JSONL。"""
+    normalized = _normalize_text(text)
+    if not normalized:
+        raise ValueError("text cannot be empty")
+    result = chat_json(
+        messages=_build_messages(normalized, category),
+        temperature=0.1,
+    )
+    return normalize_drafts(result.data, category)
+
+
 def extract_knowledge_records(
     text: str,
     category: str | None = None,
     knowledge_path: Path = DEFAULT_KNOWLEDGE_PATH,
 ) -> List[KnowledgeRecord]:
-    text = _normalize_text(text)
-    if not text:
-        raise ValueError("text cannot be empty")
-
-    result = chat_json(
-        messages=_build_messages(text=text, category=category),
-        temperature=0.1,
-    )
-    items = result.data.get("items")
-    if not isinstance(items, list) or not items:
-        raise ValueError("model response must contain a non-empty items list")
-
-    next_ids = generate_next_ids(len(items), knowledge_path)
-    hints = {"category": category}
-    records: List[KnowledgeRecord] = []
-
-    for index, raw in enumerate(items):
-        if not isinstance(raw, dict):
-            continue
-        records.append(_normalize_raw_item(raw, next_ids[index], hints))
-
-    if not records:
-        raise ValueError("no valid knowledge records were extracted")
-
-    return records
+    drafts = extract_knowledge_drafts(text, category)
+    next_ids = generate_next_ids(len(drafts), knowledge_path)
+    return [
+        KnowledgeRecord(id=item_id, **draft.to_values())
+        for item_id, draft in zip(next_ids, drafts, strict=True)
+    ]
 
 
 def append_records(records: Iterable[KnowledgeRecord], path: Path = DEFAULT_KNOWLEDGE_PATH) -> int:

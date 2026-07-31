@@ -3,30 +3,58 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Protocol
 from uuid import UUID, uuid4
 
+from openai import APIError, APITimeoutError, RateLimitError
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.config import settings
 from app.core.errors import AppError
+from app.infrastructure.embedding.provider import (
+    EmbeddingProvider,
+    get_embedding_provider,
+    validate_and_normalize_vector,
+)
 from app.modules.ingestion.errors import (
     DocumentDuplicateError,
     IngestionJobNotFoundError,
     IngestionJobStateConflictError,
     IngestionPersistenceError,
 )
+from app.modules.ingestion.extractors import ExtractedPDF, extract_pdf_text
 from app.modules.ingestion.models import Document, IngestionJob
-from app.modules.ingestion.repository import IngestionRepository, JobSnapshot
+from app.modules.ingestion.repository import (
+    DocumentSnapshot,
+    IngestionRepository,
+    JobSnapshot,
+    PipelineChunkSnapshot,
+)
 from app.modules.ingestion.schemas import (
     DocumentAccepted,
     DocumentPage,
     DocumentRead,
     IngestionJobRead,
 )
-from app.modules.ingestion.storage import StoredUpload, UploadReadable
+from app.modules.ingestion.storage import (
+    StoredUpload,
+    UploadReadable,
+    resolve_stored_path,
+)
+from app.modules.knowledge.errors import (
+    EmbeddingInputError,
+    EmbeddingResponseError,
+    EmbeddingUnavailableError,
+    KnowledgeSearchError,
+)
+from app.services.knowledge_extractor import (
+    KnowledgeDraft,
+    extract_knowledge_drafts,
+)
 
 
 DOCUMENT_DUPLICATE_CONSTRAINTS = frozenset(
@@ -76,6 +104,41 @@ class IngestionRepositoryProtocol(Protocol):
         now: datetime,
     ) -> JobSnapshot | None: ...
 
+    async def get_document_snapshot(
+        self,
+        document_id: UUID,
+    ) -> DocumentSnapshot | None: ...
+
+    async def list_pipeline_chunks(
+        self,
+        job_id: UUID,
+    ) -> list[PipelineChunkSnapshot]: ...
+
+    async def create_pipeline_items(
+        self,
+        snapshot: JobSnapshot,
+        drafts: list[dict[str, object]],
+    ) -> list[PipelineChunkSnapshot]: ...
+
+    async def finalize_pipeline(
+        self,
+        *,
+        snapshot: JobSnapshot,
+        chunks: list[PipelineChunkSnapshot],
+        vectors: list[list[float]],
+        model: str,
+        now: datetime,
+    ) -> bool: ...
+
+    async def fail_pipeline(
+        self,
+        *,
+        snapshot: JobSnapshot,
+        code: str,
+        message: str,
+        now: datetime,
+    ) -> bool: ...
+
     async def cancel_pending(
         self,
         job_id: UUID,
@@ -94,11 +157,33 @@ class IngestionService:
         repository_factory: Callable[
             [AsyncSession], IngestionRepositoryProtocol
         ] = IngestionRepository,
+        embedding_provider: EmbeddingProvider | None = None,
+        draft_extractor: Callable[
+            [str, str | None], list[KnowledgeDraft]
+        ] = extract_knowledge_drafts,
+        pdf_extractor: Callable[..., ExtractedPDF] = extract_pdf_text,
+        upload_root: Path = settings.UPLOAD_DIR,
+        max_pdf_pages: int = settings.MAX_PDF_PAGES,
+        max_ingestion_text_chars: int = settings.MAX_INGESTION_TEXT_CHARS,
+        embedding_batch_size: int = settings.EMBEDDING_BATCH_SIZE,
         now: Callable[[], datetime] | None = None,
     ) -> None:
+        if max_pdf_pages <= 0:
+            raise ValueError("max_pdf_pages 必须大于 0")
+        if max_ingestion_text_chars <= 0:
+            raise ValueError("max_ingestion_text_chars 必须大于 0")
+        if embedding_batch_size <= 0:
+            raise ValueError("embedding_batch_size 必须大于 0")
         self._session_factory = session_factory
         self._storage = storage
         self._repository_factory = repository_factory
+        self._embedding_provider = embedding_provider
+        self._draft_extractor = draft_extractor
+        self._pdf_extractor = pdf_extractor
+        self._upload_root = upload_root
+        self._max_pdf_pages = max_pdf_pages
+        self._max_ingestion_text_chars = max_ingestion_text_chars
+        self._embedding_batch_size = embedding_batch_size
         self._now = now or (lambda: datetime.now(UTC))
 
     async def accept_pdf(
@@ -230,6 +315,178 @@ class IngestionService:
         """API/CLI 兼容入口；成功后由调用方安排 resume_retry。"""
         return await self.claim_retry(job_id)
 
+    async def run_pending(self, job_id: UUID) -> None:
+        """认领 pending 任务，并在短事务之间执行所有外部调用。"""
+        snapshot = await self.claim_pending(job_id)
+        await self._execute_pipeline(snapshot)
+
+    async def resume_retry(self, snapshot: JobSnapshot) -> None:
+        """继续已经由 API/CLI 原子认领的重试 attempt。"""
+        if not isinstance(snapshot, JobSnapshot):
+            raise TypeError("snapshot 必须是 JobSnapshot")
+        await self._execute_pipeline(snapshot)
+
+    async def _execute_pipeline(self, snapshot: JobSnapshot) -> None:
+        cancelled = False
+        try:
+            document, chunks = await self._load_pipeline_state(snapshot)
+            if not chunks:
+                text = await self._read_source(snapshot, document)
+                category = _category_from_payload(snapshot.request_payload)
+                drafts = await asyncio.to_thread(
+                    self._draft_extractor,
+                    text,
+                    category,
+                )
+                _validate_drafts(drafts)
+                chunks = await self._persist_drafts(snapshot, drafts)
+            vectors, model = await self._embed_chunks(chunks)
+            await self._finalize(snapshot, chunks, vectors, model)
+        except asyncio.CancelledError as exc:
+            cancelled = True
+            await self._record_pipeline_failure(snapshot, exc)
+        except Exception as exc:
+            await self._record_pipeline_failure(snapshot, exc)
+        if cancelled:
+            raise asyncio.CancelledError
+
+    async def _load_pipeline_state(
+        self,
+        snapshot: JobSnapshot,
+    ) -> tuple[DocumentSnapshot, list[PipelineChunkSnapshot]]:
+        if snapshot.job_type != "pdf" or snapshot.document_id is None:
+            raise _PipelineContractError()
+        async with self._session_factory() as session:
+            repository = self._repository_factory(session)
+            document = await repository.get_document_snapshot(snapshot.document_id)
+            chunks = await repository.list_pipeline_chunks(snapshot.job_id)
+        if document is None:
+            raise _PipelineContractError()
+        return document, chunks
+
+    async def _read_source(
+        self,
+        snapshot: JobSnapshot,
+        document: DocumentSnapshot,
+    ) -> str:
+        if snapshot.document_id != document.document_id:
+            raise _PipelineContractError()
+        source_path = resolve_stored_path(
+            self._upload_root,
+            document.storage_path,
+        )
+        extracted = await asyncio.to_thread(
+            self._pdf_extractor,
+            source_path,
+            max_pages=self._max_pdf_pages,
+        )
+        text = extracted.text.strip()
+        if not text or len(text) > self._max_ingestion_text_chars:
+            raise _PipelinePdfError()
+        return text
+
+    async def _persist_drafts(
+        self,
+        snapshot: JobSnapshot,
+        drafts: list[KnowledgeDraft],
+    ) -> list[PipelineChunkSnapshot]:
+        values = [draft.to_values() for draft in drafts]
+        async with self._session_factory() as session:
+            async with session.begin():
+                chunks = await self._repository_factory(
+                    session
+                ).create_pipeline_items(snapshot, values)
+                if not chunks:
+                    raise _PipelineContractError()
+                return chunks
+
+    async def _embed_chunks(
+        self,
+        chunks: list[PipelineChunkSnapshot],
+    ) -> tuple[list[list[float]], str]:
+        provider = self._embedding_provider or get_embedding_provider()
+        try:
+            dimensions = provider.dimensions
+            raw_model = provider.model
+        except Exception:
+            raise EmbeddingResponseError("Embedding Provider 契约无效") from None
+        if dimensions != 1024:
+            raise EmbeddingResponseError("Embedding 维度与导入契约不一致")
+        if not isinstance(raw_model, str):
+            raise EmbeddingResponseError("Embedding 模型标识无效")
+        model = raw_model.strip()
+        if not model or len(model) > 128:
+            raise EmbeddingResponseError("Embedding 模型标识无效")
+
+        vectors: list[list[float]] = []
+        for offset in range(0, len(chunks), self._embedding_batch_size):
+            batch = chunks[offset : offset + self._embedding_batch_size]
+            returned = await provider.embed_texts(
+                [chunk.retrieval_text for chunk in batch]
+            )
+            if not isinstance(returned, list) or len(returned) != len(batch):
+                raise EmbeddingResponseError("Embedding 返回数量与输入不一致")
+            for vector in returned:
+                if not isinstance(vector, list):
+                    raise EmbeddingResponseError("Embedding 返回向量无效")
+                try:
+                    vectors.append(validate_and_normalize_vector(vector, 1024))
+                except EmbeddingResponseError:
+                    raise
+                except Exception:
+                    raise EmbeddingResponseError("Embedding 返回向量无效") from None
+        if len(vectors) != len(chunks):
+            raise EmbeddingResponseError("Embedding 返回数量与输入不一致")
+        return vectors, model
+
+    async def _finalize(
+        self,
+        snapshot: JobSnapshot,
+        chunks: list[PipelineChunkSnapshot],
+        vectors: list[list[float]],
+        model: str,
+    ) -> None:
+        async with self._session_factory() as session:
+            async with session.begin():
+                completed = await self._repository_factory(
+                    session
+                ).finalize_pipeline(
+                    snapshot=snapshot,
+                    chunks=chunks,
+                    vectors=vectors,
+                    model=model,
+                    now=self._now(),
+                )
+                if not completed:
+                    raise _PipelineCASConflict()
+
+    async def _record_pipeline_failure(
+        self,
+        snapshot: JobSnapshot,
+        error: BaseException,
+    ) -> None:
+        code, message = _map_pipeline_error(error)
+
+        async def write_failure() -> None:
+            try:
+                async with self._session_factory() as session:
+                    async with session.begin():
+                        await self._repository_factory(session).fail_pipeline(
+                            snapshot=snapshot,
+                            code=code,
+                            message=message,
+                            now=self._now(),
+                        )
+            except BaseException:
+                # 数据库不可用时可能无法收口；不能用第二个异常泄露原始细节。
+                return
+
+        task = asyncio.create_task(write_failure())
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            await task
+
     async def _cleanup_saved_upload(self, relative_path: str) -> None:
         """即使外层任务收到取消，也尽力等待受控清理结束。"""
         cleanup = asyncio.create_task(self._storage.delete_upload(relative_path))
@@ -305,3 +562,85 @@ def _constraint_name(error: IntegrityError) -> str | None:
             return name
         current = current.__cause__ or current.__context__
     return None
+
+
+class _PipelineContractError(Exception):
+    """持久化快照与 pipeline 前置条件不一致。"""
+
+
+class _PipelineCASConflict(Exception):
+    """当前 attempt 已失效或写回快照发生变化。"""
+
+
+class _PipelinePdfError(Exception):
+    """PDF 抽取结果不满足在线导入长度契约。"""
+
+
+def _category_from_payload(payload: object) -> str | None:
+    if not isinstance(payload, Mapping):
+        return None
+    value = payload.get("category")
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _validate_drafts(drafts: object) -> None:
+    if (
+        not isinstance(drafts, list)
+        or not drafts
+        or any(not isinstance(draft, KnowledgeDraft) for draft in drafts)
+    ):
+        raise _PipelineContractError()
+
+
+def _map_pipeline_error(error: BaseException) -> tuple[str, str]:
+    """只返回稳定常量，不复制上游异常文本、SQL 或路径。"""
+    if isinstance(error, SQLAlchemyError):
+        return (
+            "INGESTION_DATABASE_UNAVAILABLE",
+            "数据库服务暂时不可用。",
+        )
+    if isinstance(error, RateLimitError):
+        return (
+            "INGESTION_LLM_RATE_LIMITED",
+            "知识抽取服务请求过于频繁，请稍后重试。",
+        )
+    if isinstance(error, (APITimeoutError, TimeoutError)):
+        return (
+            "INGESTION_UPSTREAM_TIMEOUT",
+            "上游服务响应超时。",
+        )
+    if isinstance(
+        error,
+        (
+            EmbeddingInputError,
+            EmbeddingResponseError,
+            EmbeddingUnavailableError,
+            KnowledgeSearchError,
+        ),
+    ):
+        return (
+            "INGESTION_EMBEDDING_UNAVAILABLE",
+            "知识向量化服务暂时不可用。",
+        )
+    if isinstance(error, AppError) and error.code.startswith("DOCUMENT_PDF_"):
+        return (
+            "INGESTION_PDF_INVALID",
+            "PDF 文档无法读取或解析。",
+        )
+    if isinstance(error, (OSError, _PipelinePdfError)):
+        return (
+            "INGESTION_PDF_INVALID",
+            "PDF 文档无法读取或解析。",
+        )
+    if isinstance(error, (APIError, ValueError, RuntimeError)):
+        return (
+            "INGESTION_LLM_UNAVAILABLE",
+            "知识抽取服务暂时不可用。",
+        )
+    return (
+        "INGESTION_INTERNAL_ERROR",
+        "导入任务处理失败。",
+    )
