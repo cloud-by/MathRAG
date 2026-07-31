@@ -4,26 +4,6 @@
  */
 
 export interface paths {
-    "/api/chat": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * 数学 RAG 问答
-         * @deprecated
-         */
-        post: operations["chat_api_chat_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/knowledge/extract": {
         parameters: {
             query?: never;
@@ -380,77 +360,6 @@ export interface components {
             category?: string | null;
             /** File */
             file: string;
-        };
-        /** ChatRequest */
-        ChatRequest: {
-            /**
-             * History
-             * @description 最近几轮对话历史
-             */
-            history?: components["schemas"]["ChatTurn"][];
-            /**
-             * Question
-             * @description 用户当前问题
-             */
-            question: string;
-            /**
-             * Top K
-             * @description 检索返回的参考知识条数
-             */
-            top_k?: number | null;
-        };
-        /** ChatResponse */
-        ChatResponse: {
-            /** @description 检索规划信息 */
-            agentic_plan?: components["schemas"]["AgenticPlan"] | null;
-            /**
-             * Answer
-             * @description 最终回答
-             */
-            answer: string;
-            /**
-             * Question
-             * @description 用户当前问题
-             */
-            question: string;
-            /**
-             * Reasoning Content
-             * @description 模型额外的推理内容（可选）
-             */
-            reasoning_content?: string | null;
-            /**
-             * References
-             * @description 检索到的参考知识
-             */
-            references?: components["schemas"]["ReferenceItem"][];
-            /**
-             * Related Questions
-             * @description 推荐追问
-             */
-            related_questions?: string[];
-            /**
-             * Steps
-             * @description 回答步骤
-             */
-            steps?: string[];
-            /**
-             * Used Knowledge
-             * @description 本次实际使用到的知识点标题
-             */
-            used_knowledge?: string[];
-        };
-        /** ChatTurn */
-        ChatTurn: {
-            /**
-             * Content
-             * @description 消息内容
-             */
-            content: string;
-            /**
-             * Role
-             * @description 消息角色，通常为 user 或 assistant
-             */
-            role: string;
         };
         /** ChatV1Request */
         ChatV1Request: {
@@ -1081,39 +990,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    chat_api_chat_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ChatRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ChatResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     extract_knowledge_api_knowledge_extract_post: {
         parameters: {
             query?: never;

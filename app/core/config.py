@@ -61,6 +61,9 @@ class Settings:
     UPLOAD_DIR: Path = Path(
         os.getenv("UPLOAD_DIR", str(PROJECT_ROOT / "data" / "uploads"))
     )
+    FRONTEND_DIST_DIR: Path = Path(
+        os.getenv("FRONTEND_DIST_DIR", str(PROJECT_ROOT / "frontend" / "dist"))
+    )
     MAX_UPLOAD_BYTES: int = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
     MAX_PDF_PAGES: int = int(os.getenv("MAX_PDF_PAGES", "200"))
     MAX_INGESTION_TEXT_CHARS: int = int(

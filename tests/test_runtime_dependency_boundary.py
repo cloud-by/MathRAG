@@ -31,11 +31,12 @@ LEGACY_FAISS_ALLOWLIST = frozenset(
     }
 )
 ONLINE_SOURCES = (
-    "app/api/chat.py",
-    "app/frontend/index.html",
     "app/main.py",
     "app/modules/knowledge/search_service.py",
     "app/services/rag_pipeline.py",
+    "frontend/src/api/client.ts",
+    "frontend/src/features/chat/api.ts",
+    "frontend/vite.config.ts",
 )
 
 
