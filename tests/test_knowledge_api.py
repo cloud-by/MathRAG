@@ -2,13 +2,24 @@ from __future__ import annotations
 
 from typing import List
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.modules.auth.dependencies import require_admin_csrf
 from app.schemas.knowledge import KnowledgeRecord
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def override_admin_csrf_dependency():
+    app.dependency_overrides[require_admin_csrf] = lambda: object()
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(require_admin_csrf, None)
 
 
 def build_record(item_id: str = "k9999") -> KnowledgeRecord:
@@ -24,20 +35,15 @@ def build_record(item_id: str = "k9999") -> KnowledgeRecord:
     )
 
 
-def test_extract_knowledge_saves_records(monkeypatch) -> None:
-    records = [build_record()]
+def test_extract_knowledge_rejects_legacy_save_before_external_call(monkeypatch) -> None:
+    extraction_called = False
 
     def mock_extract_knowledge_records(text: str, category: str | None = None) -> List[KnowledgeRecord]:
-        assert text == "一次函数一般形如 y=kx+b。"
-        assert category == "函数"
-        return records
-
-    def mock_append_records(items) -> int:
-        assert list(items) == records
-        return 1
+        nonlocal extraction_called
+        extraction_called = True
+        return [build_record()]
 
     monkeypatch.setattr("app.api.knowledge.extract_knowledge_records", mock_extract_knowledge_records)
-    monkeypatch.setattr("app.api.knowledge.append_records", mock_append_records)
 
     response = client.post(
         "/api/knowledge/extract",
@@ -48,32 +54,17 @@ def test_extract_knowledge_saves_records(monkeypatch) -> None:
         },
     )
 
-    assert response.status_code == 200
-    data = response.json()
-    assert data["saved_count"] == 1
-    assert data["records"][0]["id"] == "k9999"
-    assert data["records"][0]["title"] == "一次函数的概念"
-    assert data["next_steps"] == [
-        "Run: python -m scripts.build_kb",
-        "Run: python -m scripts.import_legacy_knowledge",
-        "Run: python -m scripts.reindex_knowledge",
-    ]
+    assert response.status_code == 410
+    assert response.json() == {"detail": "旧 JSONL 写入能力已停用。"}
+    assert extraction_called is False
 
 
 def test_extract_knowledge_can_preview_without_saving(monkeypatch) -> None:
     records = [build_record()]
-    append_called = False
-
     def mock_extract_knowledge_records(text: str, category: str | None = None) -> List[KnowledgeRecord]:
         return records
 
-    def mock_append_records(items) -> int:
-        nonlocal append_called
-        append_called = True
-        return 1
-
     monkeypatch.setattr("app.api.knowledge.extract_knowledge_records", mock_extract_knowledge_records)
-    monkeypatch.setattr("app.api.knowledge.append_records", mock_append_records)
 
     response = client.post(
         "/api/knowledge/extract",
@@ -88,7 +79,6 @@ def test_extract_knowledge_can_preview_without_saving(monkeypatch) -> None:
     assert data["saved_count"] == 0
     assert data["records"][0]["title"] == "一次函数的概念"
     assert data["next_steps"] == []
-    assert append_called is False
 
 
 def test_extract_knowledge_rejects_empty_text() -> None:

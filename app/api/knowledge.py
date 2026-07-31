@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from openai import (
     APIConnectionError,
     APIError,
@@ -10,7 +10,9 @@ from openai import (
     RateLimitError,
 )
 
-from app.services.knowledge_extractor import DEFAULT_KNOWLEDGE_PATH, append_records, extract_knowledge_records
+from app.core.errors import AppError
+from app.modules.auth.dependencies import AuthenticatedPrincipal, require_admin_csrf
+from app.services.knowledge_extractor import DEFAULT_KNOWLEDGE_PATH, extract_knowledge_records
 from app.schemas.knowledge import KnowledgeExtractRequest, KnowledgeExtractResponse
 
 
@@ -18,27 +20,26 @@ router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
 
 
 @router.post("/extract", response_model=KnowledgeExtractResponse, summary="Extract knowledge records from textbook text")
-def extract_knowledge(request: KnowledgeExtractRequest) -> KnowledgeExtractResponse:
+def extract_knowledge(
+    request: KnowledgeExtractRequest,
+    _principal: AuthenticatedPrincipal = Depends(require_admin_csrf),
+) -> KnowledgeExtractResponse:
+    if request.save:
+        raise AppError(
+            code="KNOWLEDGE_LEGACY_WRITE_GONE",
+            message="旧 JSONL 写入能力已停用。",
+            status_code=status.HTTP_410_GONE,
+        )
     try:
         records = extract_knowledge_records(
             text=request.text,
             category=request.category,
         )
-        saved_count = append_records(records) if request.save else 0
-
-        next_steps = []
-        if request.save:
-            next_steps = [
-                "Run: python -m scripts.build_kb",
-                "Run: python -m scripts.import_legacy_knowledge",
-                "Run: python -m scripts.reindex_knowledge",
-            ]
-
         return KnowledgeExtractResponse(
             records=records,
-            saved_count=saved_count,
+            saved_count=0,
             knowledge_path=str(DEFAULT_KNOWLEDGE_PATH),
-            next_steps=next_steps,
+            next_steps=[],
         )
 
     except ValueError as exc:

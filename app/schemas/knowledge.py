@@ -88,7 +88,7 @@ class KnowledgeRecord(BaseModel):
 class KnowledgeExtractRequest(BaseModel):
     text: str = Field(..., description="Text excerpt from a math textbook")
     category: Optional[str] = Field(default=None, description="Optional category hint")
-    save: bool = Field(default=True, description="Whether to append records to the raw knowledge JSONL file")
+    save: bool = Field(default=False, description="Legacy JSONL writes are no longer supported")
 
     @field_validator("text")
     @classmethod
