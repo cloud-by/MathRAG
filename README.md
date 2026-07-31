@@ -8,11 +8,13 @@ MathRAG 是一个面向数学问答场景的 RAG 原型系统，基于 **FastAPI
 
 ## 功能概览
 
-- **数学 RAG 问答**：`/api/chat` 提供检索增强问答。
+- **认证与角色**：服务端 Session Cookie、`admin`/`user` 角色、CSRF 与显式 CORS 来源校验。
+- **持久化数学 RAG 问答**：`/api/v1/chat` 保存用户问题、回答、运行状态和引用快照，并支持幂等重试。
+- **用户会话隔离**：Conversation、Message 和 RAG Run 查询始终按当前用户过滤。
 - **Agentic 检索规划**：先由 LLM 将用户问题改写为 1~4 条检索子问题，再合并检索结果。
 - **pgvector 向量检索**：PostgreSQL 是在线知识的唯一事实数据源，按状态、可见性和模型精确过滤。
 - **结构化知识库**：JSONL 种子知识经过可重复导入与 reindex 进入 PostgreSQL/pgvector。
-- **知识抽取**：支持从文本、公开网页源、本地 PDF 抽取并追加知识点。
+- **知识抽取**：管理员可从文本预览抽取结果；旧 JSONL Web 追加入口已停用。
 - **公式渲染**：前端通过 KaTeX 渲染 `\(...\)` 与 `\[...\]` 公式。
 - **LLM JSON 修复**：对模型输出中常见 LaTeX 反斜杠转义问题做容错修复。
 - **Docker 部署**：提供 `Dockerfile` 与 `docker-compose.yml`。
@@ -29,7 +31,11 @@ MathRAG/
 │   ├── core/                 # 配置、日志
 │   ├── frontend/             # 原生 HTML/CSS/JS 前端，含 KaTeX 渲染
 │   ├── schemas/              # Pydantic 请求/响应模型
+│   ├── modules/auth/         # 服务端 Session、CSRF 与角色依赖
+│   ├── modules/conversations/# 用户隔离的会话与消息
 │   ├── modules/knowledge/    # pgvector 模型、仓储、检索与 reindex 服务
+│   ├── modules/rag/          # RAG 运行、引用快照与持久化聊天
+│   ├── modules/users/        # 用户模型、仓储与管理服务
 │   ├── services/             # LLM、RAG、导入器
 │   └── utils/                # Prompt 构建、文本清洗、数学后处理
 ├── data/
@@ -118,7 +124,16 @@ Copy-Item .env.example .env
 APP_NAME=MathRAG MVP
 APP_HOST=127.0.0.1
 APP_PORT=8000
+APP_ENV=development
+APP_WORKERS=1
 DEBUG=true
+SESSION_SECRET=
+SESSION_TTL_SECONDS=604800
+ALLOWED_ORIGINS=http://127.0.0.1:8000,http://localhost:8000
+
+# PostgreSQL
+DATABASE_URL=postgresql+asyncpg://mathrag:mathrag-dev-only@127.0.0.1:5432/mathrag
+TEST_DATABASE_URL=postgresql+asyncpg://mathrag:mathrag-dev-only@127.0.0.1:5432/mathrag_test
 
 # Embedding，要求兼容 OpenAI embeddings 接口
 EMBEDDING_API_KEY=sk-xxxx
@@ -146,7 +161,11 @@ TOP_K=3
 
 - `EMBEDDING_DIMENSIONS` 固定为 `1024`，必须与数据库列及实际 embedding 模型一致。
 - 在线检索只读取 PostgreSQL/pgvector，不读取 `data/index` 下的历史工件。
-- `/api/chat` 响应模型保留 `reasoning_content` 字段，当前通常返回 `null`。
+- development 使用 `mathrag_session`/`mathrag_csrf` Cookie，可在本机 HTTP 调试；`SESSION_SECRET` 留空时使用进程内开发值，不能用于共享环境。
+- staging/production 的 `SESSION_SECRET` 必须至少 32 个 UTF-8 字节，`ALLOWED_ORIGINS` 必须显式配置且不能包含 `*`。
+- staging/production 使用 `__Host-mathrag_session`/`__Host-mathrag_csrf`，Cookie 带 `Secure; SameSite=Lax; Path=/`，Session Cookie 额外带 `HttpOnly`。
+- `SESSION_TTL_SECONDS` 必须大于 0，默认 604800 秒（7 天）。
+- `/api/v1/chat` 从数据库加载历史，不接受客户端提供的 `history`。
 
 ---
 
@@ -159,6 +178,13 @@ docker compose up -d postgres
 alembic upgrade head
 python -m scripts.import_legacy_knowledge
 python -m scripts.reindex_knowledge
+```
+
+迁移完成后，通过交互式密码输入创建首个管理员或普通用户；密码不会出现在命令行参数和 shell 历史中：
+
+```powershell
+python -m scripts.create_user --username admin --role admin
+python -m scripts.create_user --username alice --email alice@example.local --role user
 ```
 
 然后启动应用：
@@ -538,7 +564,83 @@ GET /health
 }
 ```
 
-### 数学问答
+### 登录、CSRF 与当前用户
+
+登录会设置 HttpOnly Session Cookie 和前端可读的 CSRF Cookie：
+
+```http
+POST /api/v1/auth/login
+Content-Type: application/json
+Origin: http://localhost:8000
+
+{"username":"alice","password":"<交互输入的密码>"}
+```
+
+使用 curl 时可保存 Cookie，再从 cookie jar 读取 CSRF 值并发送修改请求。下面的 `<csrf-cookie-value>` 只是占位符：
+
+```bash
+curl -c cookies.txt -H "Origin: http://localhost:8000" \
+  -H "Content-Type: application/json" \
+  -d '{"username":"alice","password":"<password>"}' \
+  http://127.0.0.1:8000/api/v1/auth/login
+
+curl -b cookies.txt -H "Origin: http://localhost:8000" \
+  -H "X-CSRF-Token: <csrf-cookie-value>" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"新对话"}' \
+  http://127.0.0.1:8000/api/v1/conversations
+```
+
+PowerShell 可用同一个 `WebRequestSession` 保存 Cookie：
+
+```powershell
+$mathragSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$mathragOrigin = 'http://localhost:8000'
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8000/api/v1/auth/login' `
+  -WebSession $mathragSession -Headers @{Origin=$mathragOrigin} `
+  -ContentType 'application/json' `
+  -Body '{"username":"alice","password":"<password>"}'
+$mathragCsrf = $mathragSession.Cookies.GetCookies('http://127.0.0.1:8000')['mathrag_csrf'].Value
+```
+
+`GET /api/v1/auth/me` 返回当前用户；`POST /api/v1/auth/logout` 需要同样的 Origin 与 CSRF 头，并撤销服务端 Session。
+
+### Conversation 与持久化问答
+
+先创建会话，再为每次逻辑请求生成一个 UUID 作为 `client_request_id`：
+
+```http
+POST /api/v1/chat
+Content-Type: application/json
+Origin: http://localhost:8000
+X-CSRF-Token: <csrf-cookie-value>
+
+{
+  "conversation_id": "<conversation-uuid>",
+  "client_request_id": "<request-uuid>",
+  "question": "x^2+4x+3=0 怎么解？",
+  "top_k": 3
+}
+```
+
+网络重试必须复用原 `client_request_id`。已完成请求返回相同 message/run ID 和回答；仍在运行返回 `RAG_REQUEST_IN_PROGRESS`/409；已失败或取消的请求返回已保存的稳定错误，不再次调用外部服务。会话接口包括：
+
+成功响应保留 `question/answer/steps/used_knowledge/related_questions/references/agentic_plan/reasoning_content`，并增加 `conversation_id`、`question_message_id`、`answer_message_id`、`rag_run_id` 和 `client_request_id`。
+
+```text
+GET    /api/v1/conversations
+POST   /api/v1/conversations
+GET    /api/v1/conversations/{conversation_id}
+PATCH  /api/v1/conversations/{conversation_id}
+DELETE /api/v1/conversations/{conversation_id}
+GET    /api/v1/conversations/{conversation_id}/messages
+```
+
+错误响应携带 `error.code` 和 `error.request_id`。失败问题会保留 user/completed 消息，助手占位消息变为 failed；客户端可读取消息列表并使用同一 request ID 重放，运维侧使用 request ID 与返回的资源 ID 关联日志和数据库记录。
+
+### 旧版数学问答（开发兼容）
+
+旧静态前端仍使用下列 M3 接口；它不认证、不持久化，development 响应带退役头，staging/production 固定返回 410。该接口在 M6 Vue 切换提交中删除，新客户端不得继续接入。
 
 ```http
 POST /api/chat
@@ -604,6 +706,8 @@ Content-Type: application/json
 
 ### 知识抽取
 
+该接口仅允许管理员携带 Session、Origin 和 CSRF 进行预览。`save` 默认 `false`；`save=true` 固定返回 410，不能再追加 JSONL。
+
 ```http
 POST /api/knowledge/extract
 Content-Type: application/json
@@ -636,7 +740,6 @@ Content-Type: application/json
     }
   ],
   "saved_count": 0,
-  "knowledge_path": "data/raw/math_knowledge_seed.jsonl",
   "next_steps": []
 }
 ```
@@ -655,7 +758,7 @@ app/frontend/app.js
 
 能力：
 
-- 输入数学问题并调用 `/api/chat`
+- 输入数学问题并调用 development-only `/api/chat`；M6 将切换到认证的 `/api/v1/chat`
 - 展示 answer / steps / references / related_questions
 - 展示 agentic 检索规划
 - 使用 KaTeX 自动渲染公式
@@ -670,6 +773,8 @@ app/frontend/app.js
 
 ```powershell
 Copy-Item .env.example .env
+# 启动任何 Compose 服务前，先在 .env 中填写至少 32 字节的 SESSION_SECRET，
+# 并按实际前端地址填写非通配的 ALLOWED_ORIGINS。
 docker compose up -d postgres
 .\.venv\Scripts\alembic.exe upgrade head
 .\.venv\Scripts\python.exe run.py
@@ -690,6 +795,7 @@ Invoke-RestMethod http://127.0.0.1:8000/health/ready
 
 ```powershell
 Copy-Item .env.example .env
+# Compose 的 mathrag 服务固定按 production 校验；先填写 SESSION_SECRET 和 ALLOWED_ORIGINS。
 docker compose up -d postgres
 .\.venv\Scripts\alembic.exe upgrade head
 docker compose up -d --build mathrag
@@ -735,6 +841,9 @@ pytest -q
 测试主要覆盖：
 
 - `/api/chat` 响应结构与异常处理
+- `/api/v1/auth` Cookie、CSRF、角色与会话撤销
+- Conversation owner 隔离、消息分页与归档
+- `/api/v1/chat` 两段短事务、幂等重放、失败终态和引用快照
 - `/api/knowledge/extract` 保存/预览逻辑
 - RAG 多查询规划与 Knowledge Search 批量检索
 - PostgreSQL/pgvector 导入、reindex、检索与运行时依赖边界
