@@ -85,30 +85,32 @@ defineExpose({ refresh: query.refresh })
         </IconButton>
       </header>
 
-      <EmptyState
-        v-if="
-          !query.state.value.data.messages.items.length &&
-          !turns.length &&
-          !pending
-        "
-        title="这个会话还没有消息"
-        description="继续对话后，问题和回答会保存在这里。"
-      />
-      <MessageList
-        v-else
-        :messages="query.state.value.data.messages.items"
-        :turns="turns"
-        :pending="pending"
-        @select-related="emit('selectRelated', $event)"
-      />
+      <div class="history-page__messages">
+        <EmptyState
+          v-if="
+            !query.state.value.data.messages.items.length &&
+            !turns.length &&
+            !pending
+          "
+          title="这个会话还没有消息"
+          description="继续对话后，问题和回答会保存在这里。"
+        />
+        <MessageList
+          v-else
+          :messages="query.state.value.data.messages.items"
+          :turns="turns"
+          :pending="pending"
+          @select-related="emit('selectRelated', $event)"
+        />
 
-      <PaginationControls
-        v-if="query.state.value.data.messages.total > PAGE_SIZE"
-        :limit="PAGE_SIZE"
-        :offset="(page - 1) * PAGE_SIZE"
-        :total="query.state.value.data.messages.total"
-        @update:offset="setOffset"
-      />
+        <PaginationControls
+          v-if="query.state.value.data.messages.total > PAGE_SIZE"
+          :limit="PAGE_SIZE"
+          :offset="(page - 1) * PAGE_SIZE"
+          :total="query.state.value.data.messages.total"
+          @update:offset="setOffset"
+        />
+      </div>
       <slot name="composer" />
     </template>
   </main>
@@ -116,9 +118,13 @@ defineExpose({ refresh: query.refresh })
 
 <style scoped>
 .history-page {
+  display: grid;
+  height: calc(100vh - 58px);
   width: min(100%, 980px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   margin: 0 auto;
   padding: var(--space-6);
+  overflow: hidden;
 }
 
 .history-page__header {
@@ -139,6 +145,12 @@ defineExpose({ refresh: query.refresh })
 .history-page__back {
   display: flex;
   align-items: center;
+}
+
+.history-page__messages {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .history-page__back {

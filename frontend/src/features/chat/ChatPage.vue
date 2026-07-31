@@ -181,8 +181,6 @@ watch(routeConversationId, (nextId, previousId) => {
 }
 
 .chat-page__controls {
-  position: sticky;
-  bottom: 0;
   padding: var(--space-4) 0 var(--space-2);
   background: linear-gradient(
     to bottom,

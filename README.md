@@ -28,9 +28,8 @@ MathRAG 是一个面向数学问答场景的 RAG 原型系统，基于 **FastAPI
 ```text
 MathRAG/
 ├── app/
-│   ├── api/                  # FastAPI 路由：chat / knowledge
-│   ├── core/                 # 配置、日志
-│   ├── frontend/             # 原生 HTML/CSS/JS 前端，含 KaTeX 渲染
+│   ├── api/                  # FastAPI 路由注册
+│   ├── core/                 # 配置、日志与 SPA 静态托管
 │   ├── schemas/              # Pydantic 请求/响应模型
 │   ├── modules/auth/         # 服务端 Session、CSRF 与角色依赖
 │   ├── modules/conversations/# 用户隔离的会话与消息
@@ -40,6 +39,7 @@ MathRAG/
 │   ├── modules/users/        # 用户模型、仓储与管理服务
 │   ├── services/             # LLM、RAG、导入器
 │   └── utils/                # Prompt 构建、文本清洗、数学后处理
+├── frontend/                 # Vue 3 + TypeScript + Vite 单页应用
 ├── data/
 │   ├── raw/                  # 原始知识库 JSONL
 │   ├── processed/            # 预处理后的 chunk JSONL
@@ -78,6 +78,7 @@ flowchart LR
 推荐环境：
 
 - Python 3.11+
+- Node.js 24.11.1 与 npm 11+
 - PostgreSQL 及 pgvector 扩展
 - 可用的 OpenAI-Compatible Embedding API
 - 可用的 DeepSeek 或 OpenAI-Compatible Chat API
@@ -160,6 +161,7 @@ TOP_K=3
 
 # Ingestion
 UPLOAD_DIR=data/uploads
+FRONTEND_DIST_DIR=frontend/dist
 MAX_UPLOAD_BYTES=10485760
 MAX_PDF_PAGES=200
 MAX_INGESTION_TEXT_CHARS=200000
@@ -175,6 +177,7 @@ INGESTION_CHUNK_CHARS=4000
 - staging/production 使用 `__Host-mathrag_session`/`__Host-mathrag_csrf`，Cookie 带 `Secure; SameSite=Lax; Path=/`，Session Cookie 额外带 `HttpOnly`。
 - `SESSION_TTL_SECONDS` 必须大于 0，默认 604800 秒（7 天）。
 - `UPLOAD_DIR` 是受控 PDF 根目录；Compose 中固定为持久卷 `/app/data/uploads`。数据库只保存相对路径，API 不返回路径。
+- `FRONTEND_DIST_DIR` 指向 Vue 生产构建产物；本地默认是 `frontend/dist`，容器内固定为镜像中的 `/app/frontend/dist`。
 - `MAX_UPLOAD_BYTES`、`MAX_PDF_PAGES`、`MAX_INGESTION_TEXT_CHARS` 和 `INGESTION_CHUNK_CHARS` 都必须大于 0。
 - `/api/v1/chat` 从数据库加载历史，不接受客户端提供的 `history`。
 
@@ -198,7 +201,7 @@ python -m scripts.create_user --username admin --role admin
 python -m scripts.create_user --username alice --email alice@example.local --role user
 ```
 
-然后启动应用：
+然后分别启动 FastAPI 和 Vite。第一个终端运行：
 
 ```bash
 python run.py
@@ -210,9 +213,19 @@ python run.py
 uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
+第二个终端运行：
+
+```powershell
+Set-Location frontend
+npm.cmd ci
+npm.cmd run dev
+```
+
+Vite 将 `/api`、`/health` 和 `/openapi.json` 代理到 `127.0.0.1:8000`。开发页面使用 <http://127.0.0.1:5173/>；FastAPI 的 `/` 只在已有 `frontend/dist` 时提供生产 SPA。
+
 访问：
 
-- 首页：<http://127.0.0.1:8000/>
+- Vue 开发页：<http://127.0.0.1:5173/>
 - Swagger：<http://127.0.0.1:8000/docs>
 - 健康检查：<http://127.0.0.1:8000/health>
 
@@ -639,72 +652,6 @@ GET    /api/v1/conversations/{conversation_id}/messages
 
 错误响应携带 `error.code` 和 `error.request_id`。失败问题会保留 user/completed 消息，助手占位消息变为 failed；客户端可读取消息列表并使用同一 request ID 重放，运维侧使用 request ID 与返回的资源 ID 关联日志和数据库记录。
 
-### 旧版数学问答（开发兼容）
-
-旧静态前端仍使用下列 M3 接口；它不认证、不持久化，development 响应带退役头，staging/production 固定返回 410。该接口在 M6 Vue 切换提交中删除，新客户端不得继续接入。
-
-```http
-POST /api/chat
-Content-Type: application/json
-```
-
-请求：
-
-```json
-{
-  "question": "x^2+4x+3=0 怎么解？",
-  "history": [
-    {"role": "user", "content": "我想复习一元二次方程。"},
-    {"role": "assistant", "content": "可以从因式分解法、配方法和求根公式开始。"}
-  ],
-  "top_k": 3
-}
-```
-
-响应结构示例：
-
-```json
-{
-  "question": "x^2+4x+3=0 怎么解？",
-  "answer": "可以因式分解为 \\((x+1)(x+3)=0\\)，所以 \\(x=-1\\) 或 \\(x=-3\\)。",
-  "steps": [
-    "把方程写成标准形式 \\(x^2+4x+3=0\\)。",
-    "分解为 \\((x+1)(x+3)=0\\)。",
-    "分别令两个因式为 0，得到 \\(x=-1\\) 或 \\(x=-3\\)。"
-  ],
-  "used_knowledge": ["因式分解法解一元二次方程"],
-  "related_questions": [
-    "什么时候适合使用因式分解法？",
-    "同一道题如何用求根公式求解？"
-  ],
-  "references": [
-    {
-      "rank": 1,
-      "score": 0.91,
-      "index": 12,
-      "chunk_id": "k0001_chunk_0",
-      "source_id": "k0001",
-      "category": "quadratic_equation",
-      "title": "因式分解法解一元二次方程",
-      "keywords": ["一元二次方程", "因式分解"],
-      "content": "...",
-      "example": "...",
-      "steps": ["..."],
-      "difficulty": "easy",
-      "answer_context": "...",
-      "retrieval_text": "...",
-      "source_line": 1,
-      "metadata": {}
-    }
-  ],
-  "agentic_plan": {
-    "strategy": "围绕一元二次方程因式分解和求根步骤进行检索。",
-    "retrieval_queries": ["一元二次方程 因式分解 解法", "x^2+4x+3=0 求根"]
-  },
-  "reasoning_content": null
-}
-```
-
 ### 知识抽取
 
 该接口仅允许管理员携带 Session、Origin 和 CSRF 进行预览。`save` 默认 `false`；`save=true` 固定返回 410，不能再追加 JSONL。
@@ -749,24 +696,34 @@ Content-Type: application/json
 
 ## 前端说明
 
-前端文件位于：
+前端位于 `frontend/`，使用 Vue 3、TypeScript、Vite、Vue Router 和本地打包的 KaTeX。主要页面包括：
 
-```text
-app/frontend/index.html
-app/frontend/style.css
-app/frontend/app.js
+- 登录、持久化问答、历史恢复、重命名和归档对话；
+- 管理员知识 CRUD、revision 冲突处理、PDF 上传与摄取任务管理；
+- 安全的本地 KaTeX 公式渲染、结构化错误与 request id；
+- 桌面、平板和移动端响应式导航。
+
+API 类型由 FastAPI OpenAPI 生成。后端契约变化后，在项目根目录运行：
+
+```powershell
+python scripts/export_openapi.py
+Set-Location frontend
+npm.cmd run api:check
 ```
 
-能力：
+`api:check` 会重新生成 `src/api/schema.d.ts`，并在 `openapi.json` 或类型文件存在漂移时失败。功能代码只能通过统一 API client 发请求；Session 使用 HttpOnly Cookie，CSRF 令牌从同源 Cookie 读取。
 
-- 输入数学问题并调用 development-only `/api/chat`；M6 将切换到认证的 `/api/v1/chat`
-- 展示 answer / steps / references / related_questions
-- 展示 agentic 检索规划
-- 使用 KaTeX 自动渲染公式
+前端完整质量门禁：
 
-M6 前端应直接消费 M5 契约：登录后保存 Cookie 并从 CSRF Cookie 读取令牌；管理员知识页使用 `/api/v1/knowledge-items` 和 `revision` 做并发保护；上传页以 multipart 调用 `/api/v1/documents`，只展示公开 DTO，按 job id 轮询 `/api/v1/ingestion-jobs/{job_id}`，并仅在 pending/failed 状态分别显示 cancel/retry。前端不得读取 `storage_path`、拼接上传目录，或回退到 JSONL 写入入口。
-
-注意：当前 KaTeX 通过 jsDelivr CDN 引入。如果部署环境不能访问外网，可改为本地托管 KaTeX 静态资源。
+```powershell
+Set-Location frontend
+npm.cmd run format:check
+npm.cmd run lint
+npm.cmd run typecheck
+npm.cmd test -- --run
+npm.cmd run build
+npm.cmd run e2e
+```
 
 ---
 
@@ -794,7 +751,7 @@ Invoke-RestMethod http://127.0.0.1:8000/health/ready
 
 ### 完整 Compose 启动
 
-`docker-compose.yml` 会从当前工作区构建 `mathrag:local`，并启动固定版本的 PostgreSQL/pgvector。首次创建数据库卷时，先执行迁移，再启动应用：
+`docker-compose.yml` 会先用固定 Node 版本构建 Vue，再将 `frontend/dist` 复制到不含 Node.js 与 `node_modules` 的 Python runtime 镜像，并启动固定版本的 PostgreSQL/pgvector。首次创建数据库卷时，先执行迁移，再启动应用：
 
 ```powershell
 Copy-Item .env.example .env
@@ -804,6 +761,10 @@ docker compose up -d postgres
 docker compose up -d --build mathrag
 docker compose ps
 ```
+
+生产容器由 FastAPI 同源提供 Vue SPA，访问 <http://127.0.0.1:8000/>。前端深层路由可直接刷新；未知 `/api/*` 保持 JSON 404，不会回落到 SPA。
+
+M6 固定使用一个应用 worker。摄取任务由进程内 `BackgroundTasks` 执行，不具备跨进程恢复和分布式调度能力；多 worker、持久队列、OCR、限流与公网 TLS 留待 M7。
 
 查看日志：
 
@@ -843,7 +804,6 @@ pytest -q
 
 测试主要覆盖：
 
-- `/api/chat` 响应结构与异常处理
 - `/api/v1/auth` Cookie、CSRF、角色与会话撤销
 - Conversation owner 隔离、消息分页与归档
 - `/api/v1/chat` 两段短事务、幂等重放、失败终态和引用快照
@@ -902,7 +862,7 @@ python -m scripts.reindex_knowledge
 
 检查：
 
-1. 前端是否能加载 KaTeX CDN。
+1. `frontend/dist` 是否由当前源码成功构建，KaTeX 是否随产物一起加载。
 2. 公式是否使用 `\(...\)` 或 `\[...\]`。
 3. JSON 字符串里的反斜杠是否正确转义。
 

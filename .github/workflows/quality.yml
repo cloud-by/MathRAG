@@ -38,19 +38,19 @@ jobs:
       postgres:
         image: pgvector/pgvector:0.8.5-pg18-bookworm
         env:
-          POSTGRES_DB: mathrag_test
+          POSTGRES_DB: mathrag
           POSTGRES_USER: mathrag
           POSTGRES_PASSWORD: mathrag-test-only
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U mathrag -d mathrag_test"
+          --health-cmd "pg_isready -U mathrag -d mathrag"
           --health-interval 5s
           --health-timeout 3s
           --health-retries 20
     env:
       APP_ENV: development
-      DATABASE_URL: postgresql+asyncpg://mathrag:mathrag-test-only@127.0.0.1:5432/mathrag_test
+      DATABASE_URL: postgresql+asyncpg://mathrag:mathrag-test-only@127.0.0.1:5432/mathrag
       TEST_DATABASE_URL: postgresql+asyncpg://mathrag:mathrag-test-only@127.0.0.1:5432/mathrag_test
       PYTHONIOENCODING: utf-8
     steps:
@@ -61,6 +61,11 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.lock.txt
       - run: pip install --no-cache-dir -r requirements.lock.txt
+      - name: Create isolated test database
+        run: >-
+          docker exec
+          $(docker ps -q --filter ancestor=pgvector/pgvector:0.8.5-pg18-bookworm)
+          createdb -U mathrag mathrag_test
       - run: alembic upgrade head
       - run: >-
           pytest -q
