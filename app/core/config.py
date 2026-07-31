@@ -58,6 +58,15 @@ class Settings:
     RAW_DATA_DIR: Path = PROJECT_ROOT / "data" / "raw"
     PROCESSED_DATA_DIR: Path = PROJECT_ROOT / "data" / "processed"
     INDEX_DIR: Path = PROJECT_ROOT / "data" / "index"
+    UPLOAD_DIR: Path = Path(
+        os.getenv("UPLOAD_DIR", str(PROJECT_ROOT / "data" / "uploads"))
+    )
+    MAX_UPLOAD_BYTES: int = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+    MAX_PDF_PAGES: int = int(os.getenv("MAX_PDF_PAGES", "200"))
+    MAX_INGESTION_TEXT_CHARS: int = int(
+        os.getenv("MAX_INGESTION_TEXT_CHARS", "200000")
+    )
+    INGESTION_CHUNK_CHARS: int = int(os.getenv("INGESTION_CHUNK_CHARS", "4000"))
 
     RAW_KB_PATH: Path = PROJECT_ROOT / "data" / "raw" / "math_knowledge_seed.jsonl"
     PROCESSED_KB_PATH: Path = PROJECT_ROOT / "data" / "processed" / "kb_chunks.jsonl"
@@ -94,6 +103,10 @@ class Settings:
             ("DB_POOL_SIZE", self.DB_POOL_SIZE),
             ("DB_POOL_TIMEOUT", self.DB_POOL_TIMEOUT),
             ("SESSION_TTL_SECONDS", self.SESSION_TTL_SECONDS),
+            ("MAX_UPLOAD_BYTES", self.MAX_UPLOAD_BYTES),
+            ("MAX_PDF_PAGES", self.MAX_PDF_PAGES),
+            ("MAX_INGESTION_TEXT_CHARS", self.MAX_INGESTION_TEXT_CHARS),
+            ("INGESTION_CHUNK_CHARS", self.INGESTION_CHUNK_CHARS),
         )
         for field_name, value in positive_settings:
             if value <= 0:

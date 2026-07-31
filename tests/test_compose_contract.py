@@ -29,6 +29,9 @@ def test_compose_uses_local_app_and_pinned_pgvector() -> None:
     assert "pg_isready" in postgres["healthcheck"]["test"][1]
     assert "postgres_data:/var/lib/postgresql" in postgres["volumes"]
     assert "postgres_data" in compose["volumes"]
+    assert app["environment"]["UPLOAD_DIR"] == "/app/data/uploads"
+    assert "upload_data:/app/data/uploads" in app["volumes"]
+    assert "upload_data" in compose["volumes"]
 
 
 def test_compose_exposes_database_only_on_loopback() -> None:

@@ -30,8 +30,11 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET must be at least 32 UTF-8 bytes}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS must be explicit}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mathrag}:${POSTGRES_PASSWORD:-mathrag-dev-only}@postgres:5432/${POSTGRES_DB:-mathrag}
+      UPLOAD_DIR: /app/data/uploads
     ports:
       - "127.0.0.1:8000:8000"
+    volumes:
+      - upload_data:/app/data/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -45,3 +48,4 @@ services:
 
 volumes:
   postgres_data:
+  upload_data:

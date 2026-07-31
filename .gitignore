@@ -15,5 +15,6 @@ __pycache__/
 
 # Local data/import artifacts
 data/data_lake/
+data/uploads/
 data/raw/*errors.jsonl
 data/processed/pdf_text_chunks.jsonl
