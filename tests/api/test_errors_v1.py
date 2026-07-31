@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
@@ -7,6 +9,7 @@ from pydantic import BaseModel, Field
 from app.core.errors import AppError
 from app.core.exception_handlers import install_exception_handlers
 from app.core.middleware import RequestIdMiddleware
+from app.modules.knowledge.management_schemas import KnowledgeItemUpdate
 
 
 class ValidationPayload(BaseModel):
@@ -43,6 +46,13 @@ def _build_test_app() -> FastAPI:
     @app.get("/api/v1/internal-error")
     async def raise_internal_error() -> None:
         raise RuntimeError("database password=do-not-leak")
+
+    @app.patch("/api/v1/knowledge-items/{item_id}")
+    async def validate_knowledge_update(
+        item_id: UUID,
+        payload: KnowledgeItemUpdate,
+    ) -> dict[str, str]:
+        return {"item_id": str(item_id), "title": payload.title or ""}
 
     return app
 
@@ -81,6 +91,24 @@ def test_v1_validation_error_uses_stable_envelope_and_request_id() -> None:
     }
     assert "input" not in response.text
     assert "private-123" not in response.text
+
+
+def test_v1_knowledge_validation_does_not_echo_rejected_content() -> None:
+    secret = "private-knowledge-content"
+    response = TestClient(_build_test_app()).patch(
+        "/api/v1/knowledge-items/33333333-3333-4333-8333-333333333333",
+        json={"revision": 0, "content": secret, "status": secret},
+        headers={"X-Request-ID": "m5-knowledge-validation"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "REQUEST_VALIDATION_FAILED"
+    assert response.json()["error"]["request_id"] == "m5-knowledge-validation"
+    assert secret not in response.text
+    assert all(
+        "input" not in detail
+        for detail in response.json()["error"]["details"]
+    )
 
 
 def test_v1_app_error_uses_its_public_fields() -> None:
