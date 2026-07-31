@@ -391,7 +391,7 @@ async def assert_restored(session_factory: async_sessionmaker[AsyncSession]) -> 
             await session.scalar(text("SELECT version_num FROM alembic_version")),
             await session.scalar(select(func.count()).select_from(KnowledgeItem)),
             await session.scalar(select(func.count()).select_from(KnowledgeChunk)),
-        ) == ("0004_create_identity_conversation_rag_tables", 0, 0)
+        ) == ("0005_create_documents_ingestion_jobs", 0, 0)
 
 
 async def exercise_cli_double_run(database_url: str) -> None:

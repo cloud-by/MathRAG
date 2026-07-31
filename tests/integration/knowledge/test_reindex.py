@@ -189,7 +189,7 @@ async def assert_database_restored(
         item_count = await session.scalar(select(func.count()).select_from(KnowledgeItem))
         chunk_count = await session.scalar(select(func.count()).select_from(KnowledgeChunk))
         assert (revision, item_count, chunk_count) == (
-            "0004_create_identity_conversation_rag_tables",
+            "0005_create_documents_ingestion_jobs",
             0,
             0,
         )

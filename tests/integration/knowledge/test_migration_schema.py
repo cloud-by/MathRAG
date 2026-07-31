@@ -343,7 +343,8 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
 
     try:
         run_alembic(database_url, "downgrade", "base")
-        run_alembic(database_url, "upgrade", "head")
+        # 本测试锁定 M2-M4 的知识模式；M5 新增来源列由独立迁移测试覆盖。
+        run_alembic(database_url, "upgrade", "0004_create_identity_conversation_rag_tables")
         tables, embedding_format, constraints, indexes, vector_extension_exists = asyncio.run(
             fetch_schema(database_url)
         )
@@ -551,7 +552,7 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
 
         run_alembic(database_url, "upgrade", "head")
         current = run_alembic(database_url, "current")
-        assert "0004_create_identity_conversation_rag_tables (head)" in current.stdout
+        assert "0005_create_documents_ingestion_jobs (head)" in current.stdout
         check = run_alembic(database_url, "check")
         assert "No new upgrade operations detected." in check.stdout
 

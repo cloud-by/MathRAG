@@ -30,6 +30,15 @@ def index_columns(table: object) -> dict[str | None, tuple[str, ...]]:
     }
 
 
+def foreign_keys_by_columns(table: object) -> dict[tuple[str, ...], ForeignKeyConstraint]:
+    """按本表受约束列精确索引外键。"""
+    return {
+        tuple(column.name for column in constraint.columns): constraint
+        for constraint in table.constraints  # type: ignore[attr-defined]
+        if isinstance(constraint, ForeignKeyConstraint)
+    }
+
+
 def test_knowledge_item_table_maps_required_columns_and_constraints() -> None:
     """知识条目表保留迁移所需的列、默认值和约束名称。"""
     table = KnowledgeItem.__table__
@@ -37,6 +46,7 @@ def test_knowledge_item_table_maps_required_columns_and_constraints() -> None:
     assert table.name == "knowledge_items"
     assert table.c.legacy_id.nullable is True
     assert table.c.owner_id.nullable is True
+    assert table.c.ingestion_job_id.nullable is True
     assert table.c.category.index is True
     assert table.c.status.index is True
     assert table.c.keywords.default.arg(None) == []
@@ -46,15 +56,23 @@ def test_knowledge_item_table_maps_required_columns_and_constraints() -> None:
     assert table.c.status.default.arg == "indexing"
     assert table.c.revision.default.arg == 1
     assert constraint_names(table, UniqueConstraint) == {"uq_knowledge_items_legacy_id"}
-    owner_foreign_key = next(
-        constraint
-        for constraint in table.constraints
-        if isinstance(constraint, ForeignKeyConstraint)
-    )
+    foreign_keys = foreign_keys_by_columns(table)
+    assert set(foreign_keys) == {("owner_id",), ("ingestion_job_id",)}
+    owner_foreign_key = foreign_keys[("owner_id",)]
     assert owner_foreign_key.name == "fk_knowledge_items_owner_id_users"
     assert owner_foreign_key.ondelete == "SET NULL"
     assert owner_foreign_key.elements[0].column.table.name == "users"
+    ingestion_foreign_key = foreign_keys[("ingestion_job_id",)]
+    assert (
+        ingestion_foreign_key.name
+        == "fk_knowledge_items_ingestion_job_id_ingestion_jobs"
+    )
+    assert ingestion_foreign_key.ondelete == "SET NULL"
+    assert ingestion_foreign_key.elements[0].column.table.name == "ingestion_jobs"
     assert index_columns(table)["ix_knowledge_items_owner_id"] == ("owner_id",)
+    assert index_columns(table)["ix_knowledge_items_ingestion_job_id"] == (
+        "ingestion_job_id",
+    )
     assert constraint_names(table, CheckConstraint) == {
         "ck_knowledge_items_difficulty",
         "ck_knowledge_items_visibility",
@@ -70,7 +88,7 @@ def test_knowledge_item_table_maps_required_columns_and_constraints() -> None:
 def test_knowledge_chunk_table_maps_foreign_key_vector_and_metadata_column() -> None:
     """知识分块表使用级联外键、1024 维向量和 metadata 数据库列。"""
     table = KnowledgeChunk.__table__
-    foreign_key = next(iter(table.foreign_key_constraints))
+    foreign_keys = foreign_keys_by_columns(table)
 
     assert table.name == "knowledge_chunks"
     assert isinstance(table.c.embedding.type, Vector)
@@ -79,8 +97,18 @@ def test_knowledge_chunk_table_maps_foreign_key_vector_and_metadata_column() -> 
     assert KnowledgeChunk.metadata_.property.columns[0].name == "metadata"
     assert table.c.metadata.default.arg(None) == {}
     assert table.c.status.default.arg == "pending"
-    assert foreign_key.name == "fk_knowledge_chunks_knowledge_item_id_knowledge_items"
-    assert foreign_key.ondelete == "CASCADE"
+    assert table.c.document_id.nullable is True
+    assert set(foreign_keys) == {("knowledge_item_id",), ("document_id",)}
+    item_foreign_key = foreign_keys[("knowledge_item_id",)]
+    assert (
+        item_foreign_key.name
+        == "fk_knowledge_chunks_knowledge_item_id_knowledge_items"
+    )
+    assert item_foreign_key.ondelete == "CASCADE"
+    document_foreign_key = foreign_keys[("document_id",)]
+    assert document_foreign_key.name == "fk_knowledge_chunks_document_id_documents"
+    assert document_foreign_key.ondelete == "SET NULL"
+    assert document_foreign_key.elements[0].column.table.name == "documents"
     assert constraint_names(table, UniqueConstraint) == {
         "uq_knowledge_chunks_knowledge_item_id_chunk_index"
     }
@@ -100,6 +128,20 @@ def test_knowledge_chunk_table_maps_foreign_key_vector_and_metadata_column() -> 
     assert index_columns(table)["ix_knowledge_chunks_status_embedding_model"] == (
         "status",
         "embedding_model",
+    )
+    assert index_columns(table)["ix_knowledge_chunks_document_id"] == ("document_id",)
+    document_chunk_index = next(
+        index
+        for index in table.indexes
+        if index.name == "uq_knowledge_chunks_document_id_chunk_index"
+    )
+    assert document_chunk_index.unique is True
+    assert tuple(column.name for column in document_chunk_index.columns) == (
+        "document_id",
+        "chunk_index",
+    )
+    assert str(document_chunk_index.dialect_options["postgresql"]["where"]) == (
+        "document_id IS NOT NULL"
     )
 
 

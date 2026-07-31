@@ -22,6 +22,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.database.base import Base
 from app.infrastructure.database.types import UTCDateTime
+from app.modules.ingestion.models import Document as _Document  # 注册文档外键目标。
+from app.modules.ingestion.models import IngestionJob as _IngestionJob  # 注册导入任务外键目标。
 from app.modules.users.models import User as _User  # 注册 owner_id 外键目标。
 
 
@@ -36,6 +38,12 @@ class KnowledgeItem(Base):
             name="fk_knowledge_items_owner_id_users",
             ondelete="SET NULL",
         ),
+        ForeignKeyConstraint(
+            ["ingestion_job_id"],
+            ["ingestion_jobs.id"],
+            name="fk_knowledge_items_ingestion_job_id_ingestion_jobs",
+            ondelete="SET NULL",
+        ),
         UniqueConstraint("legacy_id", name="uq_knowledge_items_legacy_id"),
         CheckConstraint("difficulty IN ('easy', 'medium', 'hard')", name="difficulty"),
         CheckConstraint("visibility IN ('public', 'private')", name="visibility"),
@@ -45,12 +53,17 @@ class KnowledgeItem(Base):
         ),
         CheckConstraint("revision > 0", name="revision"),
         Index("ix_knowledge_items_owner_id", "owner_id"),
+        Index("ix_knowledge_items_ingestion_job_id", "ingestion_job_id"),
         Index("ix_knowledge_items_visibility_status", "visibility", "status"),
     )
 
     id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True, default=uuid4)
     legacy_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     owner_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        nullable=True,
+    )
+    ingestion_job_id: Mapped[UUID | None] = mapped_column(
         PostgreSQLUUID(as_uuid=True),
         nullable=True,
     )
@@ -125,6 +138,12 @@ class KnowledgeChunk(Base):
             name="fk_knowledge_chunks_knowledge_item_id_knowledge_items",
             ondelete="CASCADE",
         ),
+        ForeignKeyConstraint(
+            ["document_id"],
+            ["documents.id"],
+            name="fk_knowledge_chunks_document_id_documents",
+            ondelete="SET NULL",
+        ),
         CheckConstraint("chunk_index >= 0", name="chunk_index"),
         CheckConstraint("status IN ('pending', 'ready', 'failed')", name="status"),
         CheckConstraint(
@@ -136,11 +155,23 @@ class KnowledgeChunk(Base):
             "chunk_index",
             name="uq_knowledge_chunks_knowledge_item_id_chunk_index",
         ),
+        Index("ix_knowledge_chunks_document_id", "document_id"),
+        Index(
+            "uq_knowledge_chunks_document_id_chunk_index",
+            "document_id",
+            "chunk_index",
+            unique=True,
+            postgresql_where=text("document_id IS NOT NULL"),
+        ),
         Index("ix_knowledge_chunks_status_embedding_model", "status", "embedding_model"),
     )
 
     id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True, default=uuid4)
     knowledge_item_id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), nullable=False)
+    document_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        nullable=True,
+    )
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     retrieval_text: Mapped[str] = mapped_column(Text, nullable=False)
     answer_context: Mapped[str] = mapped_column(Text, nullable=False)

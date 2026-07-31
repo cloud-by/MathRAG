@@ -111,6 +111,47 @@ def test_live_python_callers_do_not_reference_deleted_runtime_interfaces() -> No
         assert forbidden not in combined
 
 
+def test_ingestion_models_import_without_initializing_runtime_resources() -> None:
+    command = textwrap.dedent(
+        """
+        import json
+
+        from app.modules.ingestion.models import Document, IngestionJob
+        from app.modules.knowledge.models import KnowledgeChunk, KnowledgeItem
+        from app.infrastructure.database import session
+        from app.infrastructure.embedding import provider
+
+        print(json.dumps({
+            "models": [
+                Document.__tablename__,
+                IngestionJob.__tablename__,
+                KnowledgeItem.__tablename__,
+                KnowledgeChunk.__tablename__,
+            ],
+            "engine_is_none": session._engine is None,
+            "provider_is_none": provider._embedding_provider is None,
+        }))
+        """
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", command],
+        cwd=PROJECT_ROOT,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout.strip().splitlines()[-1])
+    assert result == {
+        "models": ["documents", "ingestion_jobs", "knowledge_items", "knowledge_chunks"],
+        "engine_is_none": True,
+        "provider_is_none": True,
+    }
+
+
 def test_only_frozen_evaluation_allowlist_may_reference_legacy_faiss_artifacts() -> None:
     for root in (PROJECT_ROOT / "app", PROJECT_ROOT / "scripts"):
         for path in root.rglob("*.py"):
