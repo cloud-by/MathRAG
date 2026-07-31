@@ -36,6 +36,7 @@ def test_knowledge_item_table_maps_required_columns_and_constraints() -> None:
 
     assert table.name == "knowledge_items"
     assert table.c.legacy_id.nullable is True
+    assert table.c.owner_id.nullable is True
     assert table.c.category.index is True
     assert table.c.status.index is True
     assert table.c.keywords.default.arg(None) == []
@@ -45,6 +46,14 @@ def test_knowledge_item_table_maps_required_columns_and_constraints() -> None:
     assert table.c.status.default.arg == "indexing"
     assert table.c.revision.default.arg == 1
     assert constraint_names(table, UniqueConstraint) == {"uq_knowledge_items_legacy_id"}
+    owner_foreign_key = next(
+        constraint
+        for constraint in table.constraints
+        if isinstance(constraint, ForeignKeyConstraint)
+    )
+    assert owner_foreign_key.name == "fk_knowledge_items_owner_id_users"
+    assert owner_foreign_key.ondelete == "SET NULL"
+    assert index_columns(table)["ix_knowledge_items_owner_id"] == ("owner_id",)
     assert constraint_names(table, CheckConstraint) == {
         "ck_knowledge_items_difficulty",
         "ck_knowledge_items_visibility",

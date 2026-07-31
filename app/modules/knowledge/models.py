@@ -29,6 +29,12 @@ class KnowledgeItem(Base):
 
     __tablename__ = "knowledge_items"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["owner_id"],
+            ["users.id"],
+            name="fk_knowledge_items_owner_id_users",
+            ondelete="SET NULL",
+        ),
         UniqueConstraint("legacy_id", name="uq_knowledge_items_legacy_id"),
         CheckConstraint("difficulty IN ('easy', 'medium', 'hard')", name="difficulty"),
         CheckConstraint("visibility IN ('public', 'private')", name="visibility"),
@@ -37,11 +43,16 @@ class KnowledgeItem(Base):
             name="status",
         ),
         CheckConstraint("revision > 0", name="revision"),
+        Index("ix_knowledge_items_owner_id", "owner_id"),
         Index("ix_knowledge_items_visibility_status", "visibility", "status"),
     )
 
     id: Mapped[UUID] = mapped_column(PostgreSQLUUID(as_uuid=True), primary_key=True, default=uuid4)
     legacy_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    owner_id: Mapped[UUID | None] = mapped_column(
+        PostgreSQLUUID(as_uuid=True),
+        nullable=True,
+    )
     category: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     keywords: Mapped[list[str]] = mapped_column(

@@ -10,7 +10,11 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.core.config import settings
 from app.infrastructure.database.base import Base
+from app.modules.auth.models import UserSession  # noqa: F401
+from app.modules.conversations.models import Conversation, Message  # noqa: F401
 from app.modules.knowledge.models import KnowledgeChunk, KnowledgeItem  # noqa: F401
+from app.modules.rag.models import RAGReference, RAGRun  # noqa: F401
+from app.modules.users.models import User  # noqa: F401
 
 
 config = context.config

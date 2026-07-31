@@ -354,6 +354,7 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
         assert embedding_format == "vector(1024)"
         assert {
             "uq_knowledge_items_legacy_id",
+            "fk_knowledge_items_owner_id_users",
             "ck_knowledge_items_difficulty",
             "ck_knowledge_items_visibility",
             "ck_knowledge_items_status",
@@ -366,6 +367,7 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
         } <= constraints
         assert {
             "ix_knowledge_items_category",
+            "ix_knowledge_items_owner_id",
             "ix_knowledge_items_status",
             "ix_knowledge_chunks_status",
             "ix_knowledge_items_visibility_status",
@@ -399,6 +401,7 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
         assert set(columns) == {
             ("knowledge_items", "id"),
             ("knowledge_items", "legacy_id"),
+            ("knowledge_items", "owner_id"),
             ("knowledge_items", "category"),
             ("knowledge_items", "title"),
             ("knowledge_items", "keywords"),
@@ -425,6 +428,7 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
         for table_name, column_name, data_type, maximum_length, nullable in (
             ("knowledge_items", "id", "uuid", None, "NO"),
             ("knowledge_items", "legacy_id", "character varying", 64, "YES"),
+            ("knowledge_items", "owner_id", "uuid", None, "YES"),
             ("knowledge_items", "category", "character varying", 128, "NO"),
             ("knowledge_items", "title", "character varying", 255, "NO"),
             ("knowledge_items", "keywords", "jsonb", None, "NO"),
@@ -458,6 +462,7 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
         expected_defaults: dict[tuple[str, str], str | None] = {
             ("knowledge_items", "id"): None,
             ("knowledge_items", "legacy_id"): None,
+            ("knowledge_items", "owner_id"): None,
             ("knowledge_items", "category"): None,
             ("knowledge_items", "title"): None,
             ("knowledge_items", "keywords"): "[] jsonb",
@@ -546,7 +551,7 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
 
         run_alembic(database_url, "upgrade", "head")
         current = run_alembic(database_url, "current")
-        assert "0003_enforce_vector_readiness (head)" in current.stdout
+        assert "0004_create_identity_conversation_rag_tables (head)" in current.stdout
         check = run_alembic(database_url, "check")
         assert "No new upgrade operations detected." in check.stdout
 
