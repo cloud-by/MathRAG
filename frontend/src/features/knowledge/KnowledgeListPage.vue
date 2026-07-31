@@ -241,7 +241,7 @@ watch(
               <th>可见性</th>
               <th>状态</th>
               <th>修订</th>
-              <th><span class="sr-only">操作</span></th>
+              <th aria-label="操作"></th>
             </tr>
           </thead>
           <tbody>
