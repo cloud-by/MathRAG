@@ -31,6 +31,11 @@ class KnowledgeSearchService:
         self._session_factory = session_factory
         self._provider = provider
 
+    @property
+    def embedding_model(self) -> str:
+        """返回本服务检索向量使用的只读模型标识。"""
+        return self._provider.model
+
     async def search(
         self,
         queries: Sequence[str],

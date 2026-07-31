@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass
 from typing import Any, Dict, List, Sequence
 
@@ -9,6 +10,7 @@ from app.modules.knowledge.search_service import (
     KnowledgeSearchService,
     build_knowledge_search_service,
 )
+from app.modules.rag.execution import RAGExecution, safe_model_metadata
 from app.services.agentic_rag import QueryPlanner, get_query_planner
 from app.services.llm_service import chat_json
 from app.utils.prompt_builder import build_chat_messages
@@ -41,6 +43,20 @@ class RAGPipeline:
         history: Sequence[Dict[str, Any]] | None = None,
         top_k: int | None = None,
     ) -> Dict[str, Any]:
+        execution = await self.execute(
+            question=question,
+            history=history or [],
+            top_k=top_k,
+        )
+        return execution.to_public_response()
+
+    async def execute(
+        self,
+        *,
+        question: str,
+        history: Sequence[Dict[str, Any]],
+        top_k: int | None = None,
+    ) -> RAGExecution:
         question = str(question or "").strip()
         if not question:
             raise RAGInputError("question 不能为空")
@@ -49,10 +65,11 @@ class RAGPipeline:
         if type(k) is not int or not 1 <= k <= 10:
             raise RAGInputError("top_k 必须是 1 到 10 的整数")
 
+        trusted_history = self._normalize_history(question, history)
         plan = await asyncio.to_thread(
             self._planner.create_plan,
             question=question,
-            history=history,
+            history=trusted_history,
         )
         queries = self._normalize_queries(question, plan.retrieval_queries)
         hits = await self._knowledge_search.search(queries, top_k=k)
@@ -64,24 +81,65 @@ class RAGPipeline:
         messages = build_chat_messages(
             question=question,
             references=references,
-            history=history,
+            history=trusted_history,
         )
         llm_result = await asyncio.to_thread(chat_json, messages=messages)
         parsed = self._normalize_result(llm_result.data, references, question)
 
-        result: Dict[str, Any] = {
-            "question": question,
-            "answer": parsed["answer"],
-            "steps": parsed["steps"],
-            "used_knowledge": parsed["used_knowledge"],
-            "related_questions": parsed["related_questions"],
-            "references": references,
-            "agentic_plan": {
-                "strategy": plan.strategy,
-                "retrieval_queries": plan.retrieval_queries,
-            },
-        }
-        return result
+        raw_response = getattr(llm_result, "raw_response", None)
+        choices = getattr(raw_response, "choices", None) or []
+        finish_reason = getattr(choices[0], "finish_reason", None) if choices else None
+        llm_model = str(
+            getattr(raw_response, "model", "")
+            or os.getenv("LLM_MODEL", "deepseek-reasoner")
+        ).strip()
+        embedding_model = str(
+            getattr(
+                self._knowledge_search,
+                "embedding_model",
+                settings.EMBEDDING_MODEL,
+            )
+        ).strip()
+        return RAGExecution(
+            question=question,
+            answer=parsed["answer"],
+            steps=tuple(parsed["steps"]),
+            used_knowledge=tuple(parsed["used_knowledge"]),
+            related_questions=tuple(parsed["related_questions"]),
+            hits=tuple(hits),
+            strategy=str(plan.strategy).strip(),
+            retrieval_queries=tuple(queries),
+            top_k=k,
+            llm_model=llm_model,
+            embedding_model=embedding_model,
+            reasoning_content=getattr(llm_result, "reasoning_content", None),
+            model_metadata=safe_model_metadata(
+                finish_reason=finish_reason,
+                usage=getattr(raw_response, "usage", None),
+            ),
+            agentic_plan_queries=tuple(plan.retrieval_queries),
+        )
+
+    @staticmethod
+    def _normalize_history(
+        question: str,
+        history: Sequence[Dict[str, Any]],
+    ) -> list[dict[str, str]]:
+        normalized: list[dict[str, str]] = []
+        for turn in history:
+            if not isinstance(turn, dict):
+                continue
+            role = str(turn.get("role", "")).strip().lower()
+            content = str(turn.get("content", "")).strip()
+            if role in {"user", "assistant", "system"} and content:
+                normalized.append({"role": role, "content": content})
+        if (
+            normalized
+            and normalized[-1]["role"] == "user"
+            and normalized[-1]["content"] == question
+        ):
+            normalized.pop()
+        return normalized
 
     @staticmethod
     def _normalize_queries(
