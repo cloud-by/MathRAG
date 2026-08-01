@@ -16,6 +16,7 @@ from app.modules.auth.models import UserSession
 from app.modules.conversations.models import Conversation
 from app.modules.users.models import User
 from app.modules.users.repository import UserRepository
+from app.modules.users.types import UserActor
 from tests.integration.database_safety import require_test_database_url
 
 
@@ -55,6 +56,91 @@ async def exercise_repository(database_url: str) -> None:
                 assert user.status == "disabled"
                 assert user.password_hash == "new-hash"
                 assert user.updated_at == now
+
+                teacher_a = User(
+                    username="teacher-a",
+                    password_hash="argon2-placeholder",
+                    role="teacher",
+                )
+                teacher_b = User(
+                    username="teacher-b",
+                    password_hash="argon2-placeholder",
+                    role="teacher",
+                )
+                admin = User(
+                    username="repository-admin",
+                    password_hash="argon2-placeholder",
+                    role="admin",
+                )
+                repository.add(teacher_a)
+                repository.add(teacher_b)
+                repository.add(admin)
+                await session.flush()
+                student_a = User(
+                    username="student-a",
+                    password_hash="argon2-placeholder",
+                    created_by_user_id=teacher_a.id,
+                )
+                student_b = User(
+                    username="student-b",
+                    password_hash="argon2-placeholder",
+                    created_by_user_id=teacher_b.id,
+                )
+                repository.add(student_a)
+                repository.add(student_b)
+                await session.flush()
+
+                teacher_rows, teacher_total = await repository.list_managed(
+                    UserActor(teacher_a.id, "teacher"),
+                    query=None,
+                    role=None,
+                    status=None,
+                    page=1,
+                    page_size=20,
+                )
+                assert teacher_total == 1
+                assert [row[0].id for row in teacher_rows] == [student_a.id]
+                assert teacher_rows[0][1] == "teacher-a"
+
+                admin_rows, admin_total = await repository.list_managed(
+                    UserActor(admin.id, "admin"),
+                    query=None,
+                    role=None,
+                    status=None,
+                    page=1,
+                    page_size=20,
+                )
+                assert admin_total == 6
+                assert {row[0].id for row in admin_rows} == {
+                    user.id,
+                    teacher_a.id,
+                    teacher_b.id,
+                    student_a.id,
+                    student_b.id,
+                    admin.id,
+                }
+
+                filtered_rows, filtered_total = await repository.list_managed(
+                    UserActor(admin.id, "admin"),
+                    query="student",
+                    role="student",
+                    status="active",
+                    page=2,
+                    page_size=1,
+                )
+                assert filtered_total == 2
+                assert len(filtered_rows) == 1
+                assert filtered_rows[0][0].role == "student"
+
+                hidden = await repository.get_managed_by_id(
+                    UserActor(teacher_a.id, "teacher"),
+                    student_b.id,
+                    for_update=True,
+                )
+                assert hidden is None
+
+                active_admins = await repository.lock_active_admins()
+                assert [row.id for row in active_admins] == [admin.id]
     finally:
         await engine.dispose()
 
