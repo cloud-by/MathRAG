@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { safeNextPath } from '../../router'
+import InlineAlert from '../../components/InlineAlert.vue'
 import { useAuth } from './useAuth'
 
 const auth = useAuth()
@@ -23,6 +24,7 @@ const visibleError = computed(
       ? '暂时无法确认登录状态，请重新登录。'
       : ''),
 )
+const passwordChanged = computed(() => route.query.password_changed === '1')
 
 function validate(): boolean {
   usernameError.value = username.value.trim() ? '' : '请输入邮箱或用户名。'
@@ -75,6 +77,15 @@ async function submit(): Promise<void> {
           <p class="form-eyebrow">欢迎回来</p>
           <h2 id="login-title">登录账户</h2>
         </header>
+
+        <InlineAlert
+          v-if="passwordChanged"
+          class="password-changed"
+          tone="success"
+          title="密码已修改"
+        >
+          <p>密码已修改，请重新登录。</p>
+        </InlineAlert>
 
         <div class="form-field">
           <label for="username">邮箱或用户名</label>
@@ -179,6 +190,10 @@ async function submit(): Promise<void> {
 
 .login-form header {
   margin-bottom: var(--space-8);
+}
+
+.password-changed {
+  margin-bottom: var(--space-5);
 }
 
 .form-eyebrow {

@@ -3,6 +3,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../../api/errors'
+import ChangePasswordPage from './ChangePasswordPage.vue'
 import LoginPage from './LoginPage.vue'
 import type { AuthApi, AuthUser } from './api'
 import { authKey, createAuthController } from './useAuth'
@@ -11,8 +12,9 @@ const USER: AuthUser = {
   id: '11111111-1111-4111-8111-111111111111',
   username: 'learner',
   email: 'learner@example.com',
-  role: 'user',
+  role: 'student',
   status: 'active',
+  must_change_password: false,
 }
 
 const ADMIN: AuthUser = {
@@ -47,6 +49,7 @@ function createApi(overrides: Partial<AuthApi> = {}): AuthApi {
     getCurrentUser: vi.fn(async () => USER),
     login: vi.fn(async () => USER),
     logout: vi.fn(async () => undefined),
+    changePassword: vi.fn(async () => undefined),
     ...overrides,
   }
 }
@@ -175,6 +178,41 @@ describe('authentication state', () => {
     await bootstrap
     expect(auth.state.value).toEqual({ status: 'anonymous', user: null })
   })
+
+  it('invalidates authentication after changing password', async () => {
+    const api = createApi()
+    const auth = createAuthController(api)
+    await auth.login({ username: 'learner', password: 'temporary-123' })
+
+    await auth.changePassword({
+      current_password: 'temporary-123',
+      new_password: 'permanent-456',
+    })
+
+    expect(api.changePassword).toHaveBeenCalledWith({
+      current_password: 'temporary-123',
+      new_password: 'permanent-456',
+    })
+    expect(auth.state.value).toEqual({ status: 'anonymous', user: null })
+  })
+
+  it('keeps authentication when changing password fails', async () => {
+    const api = createApi({
+      changePassword: vi.fn(async () => {
+        throw new Error('当前密码不正确。')
+      }),
+    })
+    const auth = createAuthController(api)
+    await auth.bootstrap()
+
+    await expect(
+      auth.changePassword({
+        current_password: 'wrong-password',
+        new_password: 'permanent-456',
+      }),
+    ).rejects.toThrow('当前密码不正确。')
+    expect(auth.state.value).toEqual({ status: 'authenticated', user: USER })
+  })
 })
 
 describe('LoginPage', () => {
@@ -250,5 +288,65 @@ describe('LoginPage', () => {
       '暂时无法确认登录状态，请重新登录。',
     )
     expect(screen.getByRole('button', { name: '登录' })).toBeTruthy()
+  })
+
+  it('shows a confirmation after a password change', async () => {
+    await renderLogin(createApi(), '/login?password_changed=1')
+
+    expect(screen.getByRole('status').textContent).toContain(
+      '密码已修改，请重新登录。',
+    )
+  })
+})
+
+describe('ChangePasswordPage', () => {
+  async function renderChangePassword(api: AuthApi) {
+    const auth = createAuthController(api)
+    await auth.bootstrap()
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/change-password', component: ChangePasswordPage },
+        { path: '/login', name: 'login', component: LoginPage },
+      ],
+    })
+    await router.push('/change-password')
+    await router.isReady()
+    render(ChangePasswordPage, {
+      global: {
+        plugins: [router],
+        provide: { [authKey as symbol]: auth },
+      },
+    })
+    return { auth, router }
+  }
+
+  it('validates password length and confirmation before submitting', async () => {
+    const api = createApi()
+    await renderChangePassword(api)
+
+    await fireEvent.update(screen.getByLabelText('当前密码'), 'temporary-123')
+    await fireEvent.update(screen.getByLabelText('新密码'), 'short')
+    await fireEvent.update(screen.getByLabelText('确认新密码'), 'different')
+    await fireEvent.click(screen.getByRole('button', { name: '修改密码' }))
+
+    expect(screen.getByText('新密码长度必须为 12 至 128 个字符。')).toBeTruthy()
+    expect(screen.getByText('两次输入的新密码不一致。')).toBeTruthy()
+    expect(api.changePassword).not.toHaveBeenCalled()
+  })
+
+  it('changes the password and returns to login', async () => {
+    const api = createApi()
+    const { router } = await renderChangePassword(api)
+
+    await fireEvent.update(screen.getByLabelText('当前密码'), 'temporary-123')
+    await fireEvent.update(screen.getByLabelText('新密码'), 'permanent-456')
+    await fireEvent.update(screen.getByLabelText('确认新密码'), 'permanent-456')
+    await fireEvent.click(screen.getByRole('button', { name: '修改密码' }))
+
+    await waitFor(() => {
+      expect(router.currentRoute.value.path).toBe('/login')
+    })
+    expect(router.currentRoute.value.query.password_changed).toBe('1')
   })
 })

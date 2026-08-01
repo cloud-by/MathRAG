@@ -16,8 +16,9 @@ const USER: AuthUser = {
   id: '11111111-1111-4111-8111-111111111111',
   username: 'learner',
   email: 'learner@example.com',
-  role: 'user',
+  role: 'student',
   status: 'active',
+  must_change_password: false,
 }
 
 const ADMIN: AuthUser = { ...USER, role: 'admin', username: 'admin' }
@@ -32,6 +33,7 @@ function fakeAuth(initial: AuthState) {
     }),
     login: vi.fn(async () => USER),
     logout: vi.fn(async () => undefined),
+    changePassword: vi.fn(async () => undefined),
   }
   return { controller, mutableState }
 }
@@ -69,6 +71,29 @@ describe('application router guards', () => {
       '/',
     )
     expect(authenticated.router.currentRoute.value.path).toBe('/chat')
+  })
+
+  it('forces a temporary-password user to change password', async () => {
+    const temporaryUser: AuthUser = {
+      ...USER,
+      must_change_password: true,
+    }
+
+    const { router } = await navigate(
+      { status: 'authenticated', user: temporaryUser },
+      '/chat',
+    )
+
+    expect(router.currentRoute.value.path).toBe('/change-password')
+  })
+
+  it('keeps password-ready users out of the change-password route', async () => {
+    const { router } = await navigate(
+      { status: 'authenticated', user: USER },
+      '/change-password',
+    )
+
+    expect(router.currentRoute.value.path).toBe('/chat')
   })
 
   it('rejects ordinary users from administrator routes', async () => {

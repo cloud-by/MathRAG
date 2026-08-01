@@ -5,6 +5,7 @@ import {
   authApi,
   type AuthApi,
   type AuthUser,
+  type ChangePasswordRequest,
   type LoginCredentials,
 } from './api'
 
@@ -19,6 +20,7 @@ export interface AuthController {
   invalidate(): void
   login(credentials: LoginCredentials): Promise<AuthUser>
   logout(): Promise<void>
+  changePassword(values: ChangePasswordRequest): Promise<void>
 }
 
 function isUnauthorized(error: unknown): error is ApiError {
@@ -109,12 +111,21 @@ export function createAuthController(api: AuthApi = authApi): AuthController {
     }
   }
 
+  async function changePassword(values: ChangePasswordRequest): Promise<void> {
+    const operation = ++generation
+    await api.changePassword(values)
+    if (operation === generation) {
+      invalidate()
+    }
+  }
+
   return {
     state: readonly(state),
     bootstrap,
     invalidate,
     login,
     logout,
+    changePassword,
   }
 }
 

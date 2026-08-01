@@ -31,6 +31,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, title: '新建问答' },
   },
   {
+    path: '/change-password',
+    name: 'change-password',
+    component: () => import('../features/auth/ChangePasswordPage.vue'),
+    meta: { requiresAuth: true, title: '修改密码' },
+  },
+  {
     path: '/conversations',
     name: 'conversations',
     component: () =>
@@ -171,6 +177,21 @@ export function createAppRouter(options: CreateAppRouterOptions = {}): Router {
       }
     }
     const state = auth.state.value
+
+    if (
+      state.status === 'authenticated' &&
+      state.user.must_change_password &&
+      to.name !== 'change-password'
+    ) {
+      return { name: 'change-password' }
+    }
+    if (
+      state.status === 'authenticated' &&
+      !state.user.must_change_password &&
+      to.name === 'change-password'
+    ) {
+      return '/chat'
+    }
 
     if (to.name === 'home') {
       return state.status === 'authenticated' ? '/chat' : '/login'

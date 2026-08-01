@@ -23,8 +23,9 @@ const USER: AuthUser = {
   id: '11111111-1111-4111-8111-111111111111',
   username: 'learner',
   email: 'learner@example.com',
-  role: 'user',
+  role: 'student',
   status: 'active',
+  must_change_password: false,
 }
 
 const ADMIN: AuthUser = { ...USER, role: 'admin', username: 'admin' }
@@ -41,6 +42,7 @@ function fakeAuth(user: AuthUser) {
     logout: vi.fn(async () => {
       mutableState.value = { status: 'anonymous', user: null }
     }),
+    changePassword: vi.fn(async () => undefined),
   }
   return controller
 }
