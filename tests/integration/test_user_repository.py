@@ -141,6 +141,8 @@ async def exercise_repository(database_url: str) -> None:
 
                 active_admins = await repository.lock_active_admins()
                 assert [row.id for row in active_admins] == [admin.id]
+
+                await session.execute(delete(User))
     finally:
         await engine.dispose()
 

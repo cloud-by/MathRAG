@@ -12,8 +12,18 @@ from sqlalchemy.pool import NullPool
 
 from app.modules.auth.security import verify_password
 from app.modules.users.models import User
-from scripts.create_user import main
+from scripts.create_user import build_parser, main
 from tests.integration.database_safety import require_test_database_url
+
+
+def test_cli_defaults_to_student_and_accepts_teacher_role() -> None:
+    assert build_parser().parse_args(["--username", "student-a"]).role == "student"
+    assert (
+        build_parser()
+        .parse_args(["--username", "teacher-a", "--role", "teacher"])
+        .role
+        == "teacher"
+    )
 
 
 def test_cli_reads_password_twice_and_outputs_only_public_fields(
@@ -57,6 +67,8 @@ def test_cli_reads_password_twice_and_outputs_only_public_fields(
         assert len(prompts) == 2
         assert user is not None
         assert asyncio.run(verify_password(password, user.password_hash)) is True
+        assert user.created_by_user_id is None
+        assert user.must_change_password is True
         assert str(user.id) in output
         assert "cli-admin" in output
         assert "admin" in output
@@ -65,6 +77,7 @@ def test_cli_reads_password_twice_and_outputs_only_public_fields(
         assert user.password_hash not in output
         assert database_url not in output
     finally:
+        asyncio.run(cleanup())
         asyncio.run(engine.dispose())
 
 

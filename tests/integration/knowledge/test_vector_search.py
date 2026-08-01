@@ -86,7 +86,7 @@ async def assert_database_restored(session: AsyncSession) -> None:
     revision = await session.scalar(text("SELECT version_num FROM alembic_version"))
     item_count = await session.scalar(select(func.count()).select_from(KnowledgeItem))
     chunk_count = await session.scalar(select(func.count()).select_from(KnowledgeChunk))
-    assert revision == "0005_create_documents_ingestion_jobs"
+    assert revision == "0006_add_account_management"
     assert item_count == 0
     assert chunk_count == 0
 

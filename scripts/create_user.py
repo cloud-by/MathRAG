@@ -21,7 +21,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="创建 MathRAG 用户")
     parser.add_argument("--username", required=True)
     parser.add_argument("--email")
-    parser.add_argument("--role", choices=("admin", "user"), default="user")
+    parser.add_argument(
+        "--role",
+        choices=("student", "teacher", "admin"),
+        default="student",
+    )
     return parser
 
 

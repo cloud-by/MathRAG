@@ -132,7 +132,7 @@ async def _seed_users(session_factory, admin_id: UUID, user_id: UUID) -> None:
                         username=f"m5-user-{user_id.hex[:8]}",
                         email=None,
                         password_hash=await hash_password("user-password"),
-                        role="user",
+                        role="student",
                         status="active",
                     ),
                 ]
