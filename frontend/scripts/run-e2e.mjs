@@ -63,10 +63,15 @@ async function stopServer(server) {
 let server = null
 
 try {
-  if (!(await serverIsReady())) {
+  const existingServerIsReady = await serverIsReady()
+  if (existingServerIsReady && process.env.CI) {
+    throw new Error(`Port 4173 is already serving ${serverUrl} in CI.`)
+  }
+
+  if (!existingServerIsReady) {
     server = spawn(
       process.execPath,
-      [viteCli, '--host', '127.0.0.1', '--port', '4173'],
+      [viteCli, '--host', '127.0.0.1', '--port', '4173', '--strictPort'],
       {
         cwd: frontendRoot,
         stdio: 'ignore',
