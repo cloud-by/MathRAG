@@ -5,6 +5,7 @@ import {
   Library,
   MessageSquarePlus,
   MessagesSquare,
+  Users,
 } from '@lucide/vue'
 import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
@@ -29,6 +30,12 @@ const adminItems = [
   { href: '/documents', icon: Files, label: '文档管理' },
   { href: '/jobs', icon: Activity, label: '摄取任务' },
 ]
+const managerItems = [{ href: '/users', icon: Users, label: '用户管理' }]
+const isUserManager = computed(
+  () =>
+    auth.state.value.status === 'authenticated' &&
+    ['teacher', 'admin'].includes(auth.state.value.user.role),
+)
 const isAdmin = computed(
   () =>
     auth.state.value.status === 'authenticated' &&
@@ -66,14 +73,26 @@ function isCurrent(href: string): boolean {
         <span>{{ item.label }}</span>
       </RouterLink>
 
-      <template v-if="isAdmin">
+      <template v-if="isUserManager">
         <p
           class="app-navigation__section-label app-navigation__section-label--admin"
         >
           管理
         </p>
         <RouterLink
-          v-for="item in adminItems"
+          v-for="item in managerItems"
+          :key="item.href"
+          class="app-navigation__link"
+          :class="{ 'app-navigation__link--current': isCurrent(item.href) }"
+          :to="item.href"
+          :aria-current="isCurrent(item.href) ? 'page' : undefined"
+          @click="emit('navigate')"
+        >
+          <component :is="item.icon" :size="19" aria-hidden="true" />
+          <span>{{ item.label }}</span>
+        </RouterLink>
+        <RouterLink
+          v-for="item in isAdmin ? adminItems : []"
           :key="item.href"
           class="app-navigation__link"
           :class="{ 'app-navigation__link--current': isCurrent(item.href) }"

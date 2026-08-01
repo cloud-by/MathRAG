@@ -22,6 +22,7 @@ const USER: AuthUser = {
 }
 
 const ADMIN: AuthUser = { ...USER, role: 'admin', username: 'admin' }
+const TEACHER: AuthUser = { ...USER, role: 'teacher', username: 'teacher' }
 
 function fakeAuth(initial: AuthState) {
   const mutableState = ref<AuthState>(initial)
@@ -110,6 +111,47 @@ describe('application router guards', () => {
       '/knowledge',
     )
     expect(administrator.router.currentRoute.value.path).toBe('/knowledge')
+  })
+
+  it('allows teachers and administrators to manage users', async () => {
+    const student = await navigate(
+      { status: 'authenticated', user: USER },
+      '/users',
+    )
+    expect(student.router.currentRoute.value.path).toBe('/chat')
+
+    for (const user of [TEACHER, ADMIN]) {
+      for (const path of ['/users', '/users/new', `/users/${USER.id}`]) {
+        const { router } = await navigate(
+          { status: 'authenticated', user },
+          path,
+        )
+        expect(router.currentRoute.value.path).toBe(path)
+      }
+    }
+  })
+
+  it('keeps teachers out of administrator-only tools', async () => {
+    for (const path of ['/knowledge', '/documents', '/jobs']) {
+      const { router } = await navigate(
+        { status: 'authenticated', user: TEACHER },
+        path,
+      )
+      expect(router.currentRoute.value.path).toBe('/chat')
+    }
+  })
+
+  it('applies forced password change before user management permissions', async () => {
+    const temporaryTeacher: AuthUser = {
+      ...TEACHER,
+      must_change_password: true,
+    }
+    const { router } = await navigate(
+      { status: 'authenticated', user: temporaryTeacher },
+      '/users',
+    )
+
+    expect(router.currentRoute.value.path).toBe('/change-password')
   })
 
   it('accepts only safe same-origin absolute next paths', async () => {

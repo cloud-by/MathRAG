@@ -109,6 +109,9 @@ onBeforeUnmount(() => returnFocus?.focus())
           此操作将影响“<strong>{{ objectName }}</strong
           >”。
         </p>
+        <div v-if="$slots.default" class="confirm-dialog__content">
+          <slot />
+        </div>
         <div class="confirm-dialog__actions">
           <button
             class="secondary-button"
@@ -177,6 +180,12 @@ onBeforeUnmount(() => returnFocus?.focus())
   display: flex;
   justify-content: flex-end;
   gap: var(--space-2);
+}
+
+.confirm-dialog__content {
+  display: grid;
+  gap: var(--space-3);
+  margin: calc(var(--space-2) * -1) 0 var(--space-6);
 }
 
 .secondary-button,

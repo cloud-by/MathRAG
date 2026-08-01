@@ -50,6 +50,28 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, title: '会话详情' },
   },
   {
+    path: '/users',
+    name: 'users',
+    component: () => import('../features/users/UserListPage.vue'),
+    meta: { requiresAuth: true, requiresUserManager: true, title: '用户管理' },
+  },
+  {
+    path: '/users/new',
+    name: 'user-new',
+    component: () => import('../features/users/UserEditorPage.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresUserManager: true,
+      title: '创建账号',
+    },
+  },
+  {
+    path: '/users/:id',
+    name: 'user-detail',
+    component: () => import('../features/users/UserEditorPage.vue'),
+    meta: { requiresAuth: true, requiresUserManager: true, title: '账号详情' },
+  },
+  {
     path: '/knowledge',
     name: 'knowledge',
     component: () => import('../features/knowledge/KnowledgeListPage.vue'),
@@ -203,6 +225,13 @@ export function createAppRouter(options: CreateAppRouterOptions = {}): Router {
     }
     if (to.meta.requiresAuth && state.status !== 'authenticated') {
       return { name: 'login', query: { next: to.fullPath } }
+    }
+    if (
+      to.meta.requiresUserManager &&
+      (state.status !== 'authenticated' ||
+        !['teacher', 'admin'].includes(state.user.role))
+    ) {
+      return '/chat'
     }
     if (
       to.meta.requiresAdmin &&

@@ -29,6 +29,7 @@ const USER: AuthUser = {
 }
 
 const ADMIN: AuthUser = { ...USER, role: 'admin', username: 'admin' }
+const TEACHER: AuthUser = { ...USER, role: 'teacher', username: 'teacher' }
 
 function fakeAuth(user: AuthUser) {
   const mutableState = ref<AuthState>({ status: 'authenticated', user })
@@ -63,6 +64,11 @@ async function renderShell(user: AuthUser, path = '/chat') {
         meta: { requiresAuth: true, title: '会话记录' },
       },
       {
+        path: '/users',
+        component: { template: '<main>用户管理</main>' },
+        meta: { requiresAuth: true, title: '用户管理' },
+      },
+      {
         path: '/knowledge',
         component: { template: '<main>知识库</main>' },
         meta: { requiresAdmin: true, requiresAuth: true, title: '知识库' },
@@ -95,6 +101,7 @@ describe('AppShell', () => {
     expect(screen.queryByRole('link', { name: '知识库' })).toBeNull()
     expect(screen.queryByRole('link', { name: '文档管理' })).toBeNull()
     expect(screen.queryByRole('link', { name: '摄取任务' })).toBeNull()
+    expect(screen.queryByRole('link', { name: '用户管理' })).toBeNull()
     expect(
       screen
         .getAllByRole('link', { name: '新建问答' })
@@ -112,6 +119,20 @@ describe('AppShell', () => {
     expect(screen.getAllByRole('link', { name: '摄取任务' })).not.toHaveLength(
       0,
     )
+    expect(screen.getAllByRole('link', { name: '用户管理' })).not.toHaveLength(
+      0,
+    )
+  })
+
+  it('shows teachers only the user management command', async () => {
+    await renderShell(TEACHER, '/users')
+
+    expect(screen.getAllByRole('link', { name: '用户管理' })).not.toHaveLength(
+      0,
+    )
+    expect(screen.queryByRole('link', { name: '知识库' })).toBeNull()
+    expect(screen.queryByRole('link', { name: '文档管理' })).toBeNull()
+    expect(screen.queryByRole('link', { name: '摄取任务' })).toBeNull()
   })
 
   it('closes the mobile drawer with Escape and restores trigger focus', async () => {
