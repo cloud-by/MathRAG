@@ -12,6 +12,7 @@ __pycache__/
 .idea/
 .pdfdeps/
 .pdf_page_images/
+.worktrees/
 
 # Frontend build artifacts
 frontend/node_modules/
