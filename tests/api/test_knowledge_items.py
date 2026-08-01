@@ -46,7 +46,8 @@ def _principal(role: str) -> AuthenticatedPrincipal:
         user_id=ADMIN_ID if is_admin else USER_ID,
         session_id=uuid4(),
         username=role,
-        role="admin" if is_admin else "user",
+        role="admin" if is_admin else "student",
+        must_change_password=False,
         session_token_hash=ADMIN_SESSION_HASH if is_admin else USER_SESSION_HASH,
     )
 
@@ -169,7 +170,7 @@ def _build_client(
 
     async def principal_from_header(request: Request) -> AuthenticatedPrincipal:
         role = request.headers.get("X-Test-Role")
-        if role not in {"user", "admin"}:
+        if role not in {"student", "admin"}:
             raise AppError(
                 code="AUTH_SESSION_INVALID",
                 message="登录状态无效或已过期。",
@@ -241,7 +242,7 @@ def test_get_routes_require_authentication_and_pass_exact_arguments() -> None:
     item_path = f"/api/v1/knowledge-items/{service.item.id}"
 
     anonymous = client.get("/api/v1/knowledge-items")
-    detail = client.get(item_path, headers={"X-Test-Role": "user"})
+    detail = client.get(item_path, headers={"X-Test-Role": "student"})
     listing = client.get(
         "/api/v1/knowledge-items",
         params={
@@ -251,7 +252,7 @@ def test_get_routes_require_authentication_and_pass_exact_arguments() -> None:
             "page": 2,
             "page_size": 5,
         },
-        headers={"X-Test-Role": "user"},
+        headers={"X-Test-Role": "student"},
     )
 
     assert anonymous.status_code == 401
@@ -267,7 +268,7 @@ def test_get_routes_require_authentication_and_pass_exact_arguments() -> None:
     call_name, list_arguments = service.calls[1]
     assert call_name == "list"
     assert list_arguments["principal"].user_id == USER_ID
-    assert list_arguments["principal"].role == "user"
+    assert list_arguments["principal"].role == "student"
     assert {key: value for key, value in list_arguments.items() if key != "principal"} == {
         "status": "draft",
         "visibility": "private",
@@ -292,7 +293,7 @@ def test_collection_rejects_invalid_frozen_queries(query: str) -> None:
 
     response = client.get(
         f"/api/v1/knowledge-items?{query}",
-        headers={"X-Test-Role": "user"},
+        headers={"X-Test-Role": "student"},
     )
 
     assert response.status_code == 422
@@ -340,7 +341,7 @@ def test_each_mutation_rejects_anonymous_and_ordinary_user(method: str) -> None:
         client,
         method,
         service.item.id,
-        _safe_headers(client, "user"),
+        _safe_headers(client, "student"),
     )
 
     assert anonymous.status_code == 401
@@ -422,7 +423,7 @@ def test_domain_404_and_revision_conflict_use_v1_envelope_with_request_id() -> N
     client, _ = _build_client(service)
     missing = client.get(
         f"/api/v1/knowledge-items/{uuid4()}",
-        headers={"X-Test-Role": "user", "X-Request-ID": "knowledge-missing"},
+        headers={"X-Test-Role": "student", "X-Request-ID": "knowledge-missing"},
     )
 
     service.get_error = None
@@ -490,7 +491,7 @@ def test_main_app_assembles_routes_once_and_allows_overridden_dependencies(
         lambda: provider_calls.append("embedding") or object(),
     )
     app = create_app()
-    app.dependency_overrides[get_current_principal] = lambda: _principal("user")
+    app.dependency_overrides[get_current_principal] = lambda: _principal("student")
     app.dependency_overrides[require_admin_csrf] = lambda: _principal("admin")
     app.dependency_overrides[get_knowledge_read_service] = lambda: service
     app.dependency_overrides[get_knowledge_management_service] = lambda: service

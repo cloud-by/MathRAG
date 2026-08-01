@@ -40,7 +40,8 @@ def _principal(role: str) -> AuthenticatedPrincipal:
         user_id=ADMIN_ID if is_admin else USER_ID,
         session_id=uuid4(),
         username=role,
-        role="admin" if is_admin else "user",
+        role="admin" if is_admin else "student",
+        must_change_password=False,
         session_token_hash=ADMIN_SESSION_HASH if is_admin else USER_SESSION_HASH,
     )
 
@@ -131,7 +132,7 @@ def _build_client() -> tuple[TestClient, FakeIngestionService]:
 
     async def principal_from_header(request: Request) -> AuthenticatedPrincipal:
         role = request.headers.get("X-Test-Role")
-        if role not in {"admin", "user"}:
+        if role not in {"admin", "student"}:
             raise AppError(
                 code="AUTH_SESSION_INVALID",
                 message="登录状态无效或已过期。",
@@ -190,12 +191,12 @@ def test_document_routes_require_admin_and_upload_requires_csrf() -> None:
     anonymous = client.get("/api/v1/documents")
     ordinary_read = client.get(
         "/api/v1/documents",
-        headers={"X-Test-Role": "user"},
+        headers={"X-Test-Role": "student"},
     )
     ordinary_upload = client.post(
         "/api/v1/documents",
         files=upload,
-        headers=_safe_headers(client, "user"),
+        headers=_safe_headers(client, "student"),
     )
     missing_csrf = client.post(
         "/api/v1/documents",

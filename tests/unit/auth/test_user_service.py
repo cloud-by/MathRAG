@@ -451,3 +451,48 @@ def test_actual_disable_role_change_and_password_reset_revoke_sessions() -> None
 
     assert revoker.calls == [(target.id, NOW), (target.id, NOW), (target.id, NOW)]
     assert target.must_change_password is True
+
+
+def test_change_own_password_verifies_current_password_and_revokes_sessions() -> None:
+    repository = FakeUserRepository()
+    revoker = FakeSessionRevoker()
+    service = UserService(repository, revoker)
+    created = asyncio.run(
+        service.create_user(
+            username="password-owner",
+            password="temporary-123",
+        )
+    )
+
+    with pytest.raises(AppError) as current_error:
+        asyncio.run(
+            service.change_own_password(
+                created.id,
+                "wrong-password",
+                "permanent-456",
+                NOW,
+            )
+        )
+    with pytest.raises(AppError) as reuse_error:
+        asyncio.run(
+            service.change_own_password(
+                created.id,
+                "temporary-123",
+                "temporary-123",
+                NOW,
+            )
+        )
+
+    asyncio.run(
+        service.change_own_password(
+            created.id,
+            "temporary-123",
+            "permanent-456",
+            NOW,
+        )
+    )
+
+    assert current_error.value.code == "AUTH_CURRENT_PASSWORD_INVALID"
+    assert reuse_error.value.code == "USER_INPUT_INVALID"
+    assert repository.users[created.id].must_change_password is False
+    assert revoker.calls == [(created.id, NOW)]

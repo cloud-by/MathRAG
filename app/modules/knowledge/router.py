@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, Response, status
 
 from app.infrastructure.database.session import get_session_factory
 from app.infrastructure.embedding.provider import get_embedding_provider
-from app.modules.auth.dependencies import get_current_principal, require_admin_csrf
+from app.modules.auth.dependencies import require_admin_csrf, require_password_ready
 from app.modules.auth.service import AuthenticatedPrincipal
 from app.modules.knowledge.management_schemas import (
     KnowledgeItemCreate,
@@ -46,7 +46,7 @@ async def list_knowledge_items(
     category: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+    principal: AuthenticatedPrincipal = Depends(require_password_ready),
     service: KnowledgeManagementService = Depends(get_knowledge_read_service),
 ) -> KnowledgeItemPage:
     return await service.list(
@@ -77,7 +77,7 @@ async def create_knowledge_item(
 @router.get("/{item_id}", response_model=KnowledgeItemRead)
 async def get_knowledge_item(
     item_id: UUID,
-    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+    principal: AuthenticatedPrincipal = Depends(require_password_ready),
     service: KnowledgeManagementService = Depends(get_knowledge_read_service),
 ) -> KnowledgeItemRead:
     return await service.get(item_id, principal)

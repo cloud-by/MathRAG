@@ -44,6 +44,18 @@ async def exercise_session_lifecycle(database_url: str) -> None:
         issued = await service.login("session-user", "session-password", now)
         principal = await service.resolve(issued.raw_token, now + timedelta(seconds=1))
         assert principal.user_id == issued.user.id
+        assert principal.must_change_password is False
+
+        async with session_factory() as session:
+            async with session.begin():
+                user = await session.get(User, issued.user.id)
+                assert user is not None
+                user.must_change_password = True
+        refreshed_principal = await service.resolve(
+            issued.raw_token,
+            now + timedelta(seconds=2),
+        )
+        assert refreshed_principal.must_change_password is True
 
         async with session_factory() as session:
             stored = await session.scalar(

@@ -98,6 +98,7 @@ def _principal(role: str) -> AuthenticatedPrincipal:
         session_id=uuid4(),
         username=f"{role}-reader",
         role=role,  # type: ignore[arg-type]
+        must_change_password=False,
         session_token_hash=b"session-token-hash",
     )
 
@@ -149,7 +150,7 @@ def test_user_cannot_observe_hidden_item(hidden_item: KnowledgeItem) -> None:
     service = _service([hidden_item])
 
     with pytest.raises(KnowledgeNotFoundError) as exc_info:
-        asyncio.run(service.get(hidden_item.id, _principal("user")))
+        asyncio.run(service.get(hidden_item.id, _principal("student")))
 
     assert exc_info.value.code == "KNOWLEDGE_NOT_FOUND"
     assert exc_info.value.status_code == 404
@@ -158,7 +159,7 @@ def test_user_cannot_observe_hidden_item(hidden_item: KnowledgeItem) -> None:
 def test_missing_and_hidden_items_have_the_same_public_error() -> None:
     private_item = _item(title="私有条目", visibility="private")
     service = _service([private_item])
-    principal = _principal("user")
+    principal = _principal("student")
 
     errors: list[KnowledgeNotFoundError] = []
     for item_id in (private_item.id, uuid4()):
@@ -193,7 +194,7 @@ def test_list_applies_filters_and_returns_safe_page() -> None:
 
     page = asyncio.run(
         service.list(
-            _principal("user"),
+            _principal("student"),
             status="ready",
             visibility="public",
             category="代数",
@@ -211,7 +212,7 @@ def test_list_uses_public_api_pagination_and_filter_defaults() -> None:
     item = _item(title="默认列表条目")
     service = _service([item])
 
-    page = asyncio.run(service.list(_principal("user")))
+    page = asyncio.run(service.list(_principal("student")))
 
     assert [listed.id for listed in page.items] == [item.id]
     assert (page.page, page.page_size, page.total) == (1, 20, 1)
@@ -227,7 +228,7 @@ def test_list_rejects_invalid_pagination(page: int, page_size: int) -> None:
     with pytest.raises(AppError) as exc_info:
         asyncio.run(
             service.list(
-                _principal("user"),
+                _principal("student"),
                 status=None,
                 visibility=None,
                 category=None,

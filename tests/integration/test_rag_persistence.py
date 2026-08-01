@@ -213,7 +213,8 @@ async def exercise_persistence(database_url: str) -> None:
             user_id=user_id,
             session_id=uuid4(),
             username="rag-user",
-            role="user",
+            role="student",
+            must_change_password=False,
             session_token_hash=b"hash",
         )
         service = ChatPersistenceService(session_factory, executor, lambda: datetime.now(UTC))
@@ -344,7 +345,8 @@ async def exercise_concurrent_idempotency(database_url: str) -> None:
             user_id=user_id,
             session_id=uuid4(),
             username="concurrent-user",
-            role="user",
+            role="student",
+            must_change_password=False,
             session_token_hash=b"hash",
         )
         executor = BlockingExecutor()

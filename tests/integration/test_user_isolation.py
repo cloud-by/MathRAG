@@ -52,7 +52,8 @@ def principal(user_id, username: str) -> AuthenticatedPrincipal:
         user_id=user_id,
         session_id=uuid4(),
         username=username,
-        role="user",
+        role="student",
+        must_change_password=False,
         session_token_hash=b"x" * 32,
     )
 

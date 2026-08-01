@@ -13,6 +13,7 @@ from app.core.errors import AppError
 from app.modules.auth.dependencies import (
     AuthenticatedPrincipal,
     require_admin,
+    require_password_ready,
     validate_csrf_request,
     validate_request_origin,
 )
@@ -47,12 +48,18 @@ def make_request(
     )
 
 
-def principal(session_hash: bytes = b"x" * 32, role: str = "user") -> AuthenticatedPrincipal:
+def principal(
+    session_hash: bytes = b"x" * 32,
+    role: str = "student",
+    *,
+    must_change_password: bool = False,
+) -> AuthenticatedPrincipal:
     return AuthenticatedPrincipal(
         user_id=uuid4(),
         session_id=uuid4(),
         username="alice",
         role=role,  # type: ignore[arg-type]
+        must_change_password=must_change_password,
         session_token_hash=session_hash,
     )
 
@@ -102,6 +109,16 @@ def test_csrf_requires_matching_cookie_header_signature_and_session_binding() ->
 def test_require_admin_rejects_regular_user() -> None:
     assert asyncio.run(require_admin(principal(role="admin"))).role == "admin"
     with pytest.raises(AppError) as exc_info:
-        asyncio.run(require_admin(principal(role="user")))
+        asyncio.run(require_admin(principal(role="student")))
     assert exc_info.value.code == "AUTH_FORBIDDEN"
+    assert exc_info.value.status_code == 403
+
+
+def test_password_ready_dependency_blocks_temporary_password() -> None:
+    pending = principal(must_change_password=True)
+
+    with pytest.raises(AppError) as exc_info:
+        asyncio.run(require_password_ready(pending))
+
+    assert exc_info.value.code == "AUTH_PASSWORD_CHANGE_REQUIRED"
     assert exc_info.value.status_code == 403

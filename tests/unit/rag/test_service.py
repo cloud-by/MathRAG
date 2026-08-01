@@ -172,7 +172,8 @@ def make_principal() -> AuthenticatedPrincipal:
         user_id=USER_ID,
         session_id=UUID(int=999),
         username="tester",
-        role="user",
+        role="student",
+        must_change_password=False,
         session_token_hash=b"hash",
     )
 

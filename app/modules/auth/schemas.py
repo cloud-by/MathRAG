@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.modules.users.types import UserRole, UserStatus
+
 
 class AuthUserRead(BaseModel):
     """认证端点冻结的最小用户资源。"""
@@ -15,8 +17,9 @@ class AuthUserRead(BaseModel):
     id: UUID
     username: str
     email: str | None
-    role: str
-    status: str
+    role: UserRole
+    status: UserStatus
+    must_change_password: bool
 
 
 class LoginRequest(BaseModel):
@@ -32,3 +35,12 @@ class LoginRequest(BaseModel):
         if not normalized:
             raise ValueError("username 不能为空")
         return normalized
+
+
+class ChangePasswordRequest(BaseModel):
+    """当前登录用户修改自己密码的输入。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=12, max_length=128)

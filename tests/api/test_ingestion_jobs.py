@@ -151,7 +151,7 @@ def test_job_collection_rejects_anonymous_and_ordinary_users() -> None:
     anonymous = client.get("/api/v1/ingestion-jobs")
     ordinary = client.get(
         "/api/v1/ingestion-jobs",
-        headers={"X-Test-Role": "user"},
+        headers={"X-Test-Role": "student"},
     )
 
     assert anonymous.status_code == 401
@@ -206,7 +206,7 @@ def test_job_routes_reject_anonymous_user_and_missing_csrf() -> None:
     anonymous = client.get(f"/api/v1/ingestion-jobs/{JOB_ID}")
     user = client.get(
         f"/api/v1/ingestion-jobs/{JOB_ID}",
-        headers={"X-Test-Role": "user"},
+        headers={"X-Test-Role": "student"},
     )
     missing_csrf = client.post(
         f"/api/v1/ingestion-jobs/{JOB_ID}/cancel",

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.auth.models import UserSession
 from app.modules.users.models import User
+from app.modules.users.types import UserRole, UserStatus
 
 
 @dataclass(frozen=True)
@@ -19,8 +20,10 @@ class LoginUserRecord:
     username: str
     email: str | None
     password_hash: str
-    role: str
-    status: str
+    role: UserRole
+    status: UserStatus
+    created_by_user_id: UUID | None
+    must_change_password: bool
     created_at: datetime
     updated_at: datetime
 
@@ -30,7 +33,8 @@ class ActiveSessionRecord:
     session_id: UUID
     user_id: UUID
     username: str
-    role: str
+    role: UserRole
+    must_change_password: bool
     token_hash: bytes
     last_seen_at: datetime
 
@@ -75,7 +79,8 @@ class AuthRepository:
             session_id=user_session.id,
             user_id=user.id,
             username=user.username,
-            role=user.role,
+            role=user.role,  # type: ignore[arg-type]
+            must_change_password=user.must_change_password,
             token_hash=user_session.token_hash,
             last_seen_at=user_session.last_seen_at,
         )
@@ -95,7 +100,8 @@ class AuthRepository:
             session_id=user_session.id,
             user_id=user.id,
             username=user.username,
-            role=user.role,
+            role=user.role,  # type: ignore[arg-type]
+            must_change_password=user.must_change_password,
             token_hash=user_session.token_hash,
             last_seen_at=user_session.last_seen_at,
         )
@@ -131,8 +137,10 @@ def _to_login_record(user: User | None) -> LoginUserRecord | None:
         username=user.username,
         email=user.email,
         password_hash=user.password_hash,
-        role=user.role,
-        status=user.status,
+        role=user.role,  # type: ignore[arg-type]
+        status=user.status,  # type: ignore[arg-type]
+        created_by_user_id=user.created_by_user_id,
+        must_change_password=user.must_change_password,
         created_at=user.created_at,
         updated_at=user.updated_at,
     )

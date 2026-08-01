@@ -10,8 +10,8 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from app.infrastructure.database.session import get_session_factory
 from app.modules.auth.dependencies import (
     AuthenticatedPrincipal,
-    get_current_principal,
-    require_csrf,
+    require_password_ready,
+    require_ready_csrf,
 )
 from app.modules.conversations.schemas import (
     ConversationCreate,
@@ -35,7 +35,7 @@ async def list_conversations(
     status_filter: Literal["active", "archived"] = Query(default="active", alias="status"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
-    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+    principal: AuthenticatedPrincipal = Depends(require_password_ready),
     service: ConversationService = Depends(get_conversation_service),
 ) -> ConversationPage:
     return await service.list(
@@ -49,7 +49,7 @@ async def list_conversations(
 @router.post("", response_model=ConversationRead, status_code=status.HTTP_201_CREATED)
 async def create_conversation(
     request: ConversationCreate,
-    principal: AuthenticatedPrincipal = Depends(require_csrf),
+    principal: AuthenticatedPrincipal = Depends(require_ready_csrf),
     service: ConversationService = Depends(get_conversation_service),
 ) -> ConversationRead:
     return await service.create(principal.user_id, request.title)
@@ -60,7 +60,7 @@ async def list_messages(
     conversation_id: UUID,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=100),
-    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+    principal: AuthenticatedPrincipal = Depends(require_password_ready),
     service: ConversationService = Depends(get_conversation_service),
 ) -> MessagePage:
     return await service.list_messages(
@@ -74,7 +74,7 @@ async def list_messages(
 @router.get("/{conversation_id}", response_model=ConversationRead)
 async def get_conversation(
     conversation_id: UUID,
-    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+    principal: AuthenticatedPrincipal = Depends(require_password_ready),
     service: ConversationService = Depends(get_conversation_service),
 ) -> ConversationRead:
     return await service.get(conversation_id, principal.user_id)
@@ -84,7 +84,7 @@ async def get_conversation(
 async def update_conversation(
     conversation_id: UUID,
     request: ConversationUpdate,
-    principal: AuthenticatedPrincipal = Depends(require_csrf),
+    principal: AuthenticatedPrincipal = Depends(require_ready_csrf),
     service: ConversationService = Depends(get_conversation_service),
 ) -> ConversationRead:
     return await service.update(
@@ -97,7 +97,7 @@ async def update_conversation(
 @router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_conversation(
     conversation_id: UUID,
-    principal: AuthenticatedPrincipal = Depends(require_csrf),
+    principal: AuthenticatedPrincipal = Depends(require_ready_csrf),
     service: ConversationService = Depends(get_conversation_service),
 ) -> Response:
     await service.archive(conversation_id, principal.user_id)

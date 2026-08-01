@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 from sqlalchemy.exc import IntegrityError
 
 from app.core.errors import AppError
-from app.modules.auth.security import hash_password
+from app.modules.auth.security import hash_password, verify_password
 from app.modules.users.models import User
 from app.modules.users.schemas import (
     ManagedUserRead,
@@ -283,6 +283,35 @@ class UserService:
         )
         await self._repository.flush()
         await self._revoke_sessions(target.id, now)
+
+    async def change_own_password(
+        self,
+        user_id: UUID,
+        current_password: str,
+        new_password: str,
+        now: datetime,
+    ) -> None:
+        _validate_password(new_password)
+        user = await self._repository.get_by_id(user_id, for_update=True)
+        if user is None or not await verify_password(
+            current_password,
+            user.password_hash,
+        ):
+            raise _error(
+                "AUTH_CURRENT_PASSWORD_INVALID",
+                "当前密码不正确。",
+                422,
+            )
+        if await verify_password(new_password, user.password_hash):
+            raise _input_error("新密码不能与当前密码相同。")
+        await self._repository.set_password_hash(
+            user,
+            await hash_password(new_password),
+            now,
+            must_change_password=False,
+        )
+        await self._repository.flush()
+        await self._revoke_sessions(user_id, now)
 
     async def _create(
         self,

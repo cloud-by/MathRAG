@@ -32,7 +32,8 @@ def make_principal() -> AuthenticatedPrincipal:
         user_id=USER_ID,
         session_id=uuid4(),
         username="v1-user",
-        role="user",
+        role="student",
+        must_change_password=False,
         session_token_hash=b"x" * 32,
     )
 

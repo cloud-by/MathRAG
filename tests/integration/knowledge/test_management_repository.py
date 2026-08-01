@@ -27,6 +27,7 @@ def _principal(role: str) -> AuthenticatedPrincipal:
         session_id=UUID(int=200 if role == "admin" else 201),
         username=role,
         role=role,  # type: ignore[arg-type]
+        must_change_password=False,
         session_token_hash=b"integration-session-token",
     )
 
@@ -132,7 +133,7 @@ async def _exercise_repository(database_url: str) -> None:
 
         async with session_factory() as session:
             repository = KnowledgeManagementRepository(session)
-            user = _principal("user")
+            user = _principal("student")
             admin = _principal("admin")
 
             assert await repository.get_visible(public_old.id, user) is not None

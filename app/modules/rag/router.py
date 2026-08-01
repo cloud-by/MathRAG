@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends
 
 from app.infrastructure.database.session import get_session_factory
-from app.modules.auth.dependencies import require_csrf
+from app.modules.auth.dependencies import require_ready_csrf
 from app.modules.auth.service import AuthenticatedPrincipal
 from app.modules.rag.schemas import ChatV1Request, ChatV1Response
 from app.modules.rag.service import ChatPersistenceService
@@ -39,7 +39,7 @@ def get_chat_persistence_service() -> ChatPersistenceService:
 )
 async def chat_v1(
     request: ChatV1Request,
-    principal: AuthenticatedPrincipal = Depends(require_csrf),
+    principal: AuthenticatedPrincipal = Depends(require_ready_csrf),
     service: ChatPersistenceService = Depends(get_chat_persistence_service),
 ) -> ChatV1Response:
     result = await service.chat(

@@ -69,7 +69,8 @@ def build_client(service: FakeConversationService) -> TestClient:
             user_id=user_id,
             session_id=uuid4(),
             username="test",
-            role="user",
+            role="student",
+            must_change_password=False,
             session_token_hash=b"x" * 32,
         )
 

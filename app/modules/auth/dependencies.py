@@ -107,6 +107,24 @@ async def require_csrf(
     return principal
 
 
+async def require_password_ready(
+    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+) -> AuthenticatedPrincipal:
+    if principal.must_change_password:
+        raise AppError(
+            code="AUTH_PASSWORD_CHANGE_REQUIRED",
+            message="请先修改临时密码。",
+            status_code=403,
+        )
+    return principal
+
+
+async def require_ready_csrf(
+    principal: AuthenticatedPrincipal = Depends(require_csrf),
+) -> AuthenticatedPrincipal:
+    return await require_password_ready(principal)
+
+
 async def require_logout_csrf(
     request: Request,
     principal: AuthenticatedPrincipal = Depends(get_logout_principal),
@@ -116,7 +134,7 @@ async def require_logout_csrf(
 
 
 async def require_admin(
-    principal: AuthenticatedPrincipal = Depends(get_current_principal),
+    principal: AuthenticatedPrincipal = Depends(require_password_ready),
 ) -> AuthenticatedPrincipal:
     if principal.role != "admin":
         raise AppError(
@@ -128,7 +146,7 @@ async def require_admin(
 
 
 async def require_admin_csrf(
-    principal: AuthenticatedPrincipal = Depends(require_csrf),
+    principal: AuthenticatedPrincipal = Depends(require_ready_csrf),
 ) -> AuthenticatedPrincipal:
     return await require_admin(principal)
 

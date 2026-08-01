@@ -18,25 +18,44 @@ from app.core.exception_handlers import install_exception_handlers
 from app.core.middleware import RequestIdMiddleware
 from app.api.knowledge import router as knowledge_router
 from app.modules.auth.router import get_auth_service, router, set_auth_cookies
+from app.modules.auth.repository import AuthRepository
 from app.modules.auth.service import AuthService, IssuedSession
 from app.modules.auth.security import hash_password
 from app.modules.auth.models import UserSession
 from app.modules.users.models import User
+from app.modules.users.dependencies import get_user_service
+from app.modules.users.repository import UserRepository
 from app.modules.users.schemas import UserRead
+from app.modules.users.service import UserService
 from tests.integration.database_safety import require_test_database_url
 
 
-def build_app(service: AuthService) -> FastAPI:
+def build_app(
+    service: AuthService,
+    session_factory: async_sessionmaker,
+) -> FastAPI:
     app = FastAPI()
     install_exception_handlers(app)
     app.add_middleware(RequestIdMiddleware)
     app.include_router(router)
     app.include_router(knowledge_router)
     app.dependency_overrides[get_auth_service] = lambda: service
+
+    async def user_service_override():
+        async with session_factory() as session:
+            async with session.begin():
+                yield UserService(UserRepository(session), AuthRepository(session))
+
+    app.dependency_overrides[get_user_service] = user_service_override
     return app
 
 
-async def seed_user(session_factory: async_sessionmaker, *, role: str = "user") -> None:
+async def seed_user(
+    session_factory: async_sessionmaker,
+    *,
+    role: str = "student",
+    must_change_password: bool = False,
+) -> None:
     async with session_factory() as session:
         async with session.begin():
             await session.execute(delete(UserSession))
@@ -48,6 +67,7 @@ async def seed_user(session_factory: async_sessionmaker, *, role: str = "user") 
                     password_hash=await hash_password("auth-api-password"),
                     role=role,
                     status="active",
+                    must_change_password=must_change_password,
                 )
             )
 
@@ -65,7 +85,7 @@ def test_login_me_logout_enforces_cookie_and_csrf_contract() -> None:
         session_ttl_seconds=3600,
         csrf_secret=Settings().SESSION_SECRET,
     )
-    client = TestClient(build_app(service))
+    client = TestClient(build_app(service, session_factory))
     try:
         anonymous_knowledge = client.post(
             "/api/knowledge/extract",
@@ -89,8 +109,10 @@ def test_login_me_logout_enforces_cookie_and_csrf_contract() -> None:
         )
         assert login.status_code == 200
         assert login.json()["username"] == "auth-api-user"
-        assert login.json()["role"] == "user"
-        assert "password" not in login.text
+        assert login.json()["role"] == "student"
+        assert login.json()["must_change_password"] is False
+        assert "password" not in login.json()
+        assert "password_hash" not in login.json()
         session_token = client.cookies.get("mathrag_session")
         csrf_token = client.cookies.get("mathrag_csrf")
         assert session_token
@@ -143,6 +165,91 @@ def test_login_me_logout_enforces_cookie_and_csrf_contract() -> None:
         asyncio.run(engine.dispose())
 
 
+def test_temporary_password_must_be_changed_and_revokes_old_session() -> None:
+    database_url = os.getenv("TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("TEST_DATABASE_URL 未配置")
+    database_url = require_test_database_url(database_url, os.getenv("DATABASE_URL"))
+    engine = create_async_engine(database_url, poolclass=NullPool)
+    session_factory = async_sessionmaker(
+        engine,
+        expire_on_commit=False,
+        autoflush=False,
+    )
+    asyncio.run(seed_user(session_factory, must_change_password=True))
+    service = AuthService(
+        session_factory,
+        session_ttl_seconds=3600,
+        csrf_secret=Settings().SESSION_SECRET,
+    )
+    client = TestClient(build_app(service, session_factory))
+    try:
+        login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "auth-api-user", "password": "auth-api-password"},
+            headers={"Origin": "http://localhost:8000"},
+        )
+        assert login.status_code == 200
+        assert login.json()["must_change_password"] is True
+        assert client.get("/api/v1/auth/me").json()["must_change_password"] is True
+        csrf_token = client.cookies.get("mathrag_csrf")
+        assert csrf_token
+
+        missing_csrf = client.post(
+            "/api/v1/auth/change-password",
+            json={
+                "current_password": "auth-api-password",
+                "new_password": "permanent-password",
+            },
+            headers={"Origin": "http://localhost:8000"},
+        )
+        assert missing_csrf.status_code == 403
+
+        wrong_current = client.post(
+            "/api/v1/auth/change-password",
+            json={
+                "current_password": "wrong-password",
+                "new_password": "permanent-password",
+            },
+            headers={
+                "Origin": "http://localhost:8000",
+                "X-CSRF-Token": csrf_token,
+            },
+        )
+        assert wrong_current.status_code == 422
+        assert wrong_current.json()["error"]["code"] == "AUTH_CURRENT_PASSWORD_INVALID"
+
+        changed = client.post(
+            "/api/v1/auth/change-password",
+            json={
+                "current_password": "auth-api-password",
+                "new_password": "permanent-password",
+            },
+            headers={
+                "Origin": "http://localhost:8000",
+                "X-CSRF-Token": csrf_token,
+            },
+        )
+        assert changed.status_code == 204
+        assert client.get("/api/v1/auth/me").status_code == 401
+
+        old_password = client.post(
+            "/api/v1/auth/login",
+            json={"username": "auth-api-user", "password": "auth-api-password"},
+            headers={"Origin": "http://localhost:8000"},
+        )
+        assert old_password.status_code == 401
+        new_password = client.post(
+            "/api/v1/auth/login",
+            json={"username": "auth-api-user", "password": "permanent-password"},
+            headers={"Origin": "http://localhost:8000"},
+        )
+        assert new_password.status_code == 200
+        assert new_password.json()["must_change_password"] is False
+    finally:
+        asyncio.run(engine.dispose())
+
+
 def test_production_cookie_attributes_are_exact() -> None:
     configured = Settings(
         APP_ENV="production",
@@ -155,8 +262,10 @@ def test_production_cookie_attributes_are_exact() -> None:
         id=__import__("uuid").uuid4(),
         username="alice",
         email=None,
-        role="user",
+        role="student",
         status="active",
+        created_by_user_id=None,
+        must_change_password=False,
         created_at=now,
         updated_at=now,
     )

@@ -94,6 +94,7 @@ def test_resolve_returns_immutable_snapshot_and_throttles_last_seen_write() -> N
         user_id=user_id,
         username="alice",
         role="admin",
+        must_change_password=False,
         token_hash=b"x" * 32,
         last_seen_at=now - timedelta(minutes=6),
     )

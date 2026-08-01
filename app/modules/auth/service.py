@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Literal
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -20,6 +19,7 @@ from app.modules.auth.security import (
     verify_password,
 )
 from app.modules.users.schemas import UserRead
+from app.modules.users.types import UserRole
 
 
 DUMMY_PASSWORD_HASH = (
@@ -34,7 +34,8 @@ class AuthenticatedPrincipal:
     user_id: UUID
     session_id: UUID
     username: str
-    role: Literal["admin", "user"]
+    role: UserRole
+    must_change_password: bool
     session_token_hash: bytes
 
 
@@ -120,7 +121,8 @@ class AuthService:
                     user_id=active.user_id,
                     session_id=active.session_id,
                     username=active.username,
-                    role=active.role,  # type: ignore[arg-type]
+                    role=active.role,
+                    must_change_password=active.must_change_password,
                     session_token_hash=active.token_hash,
                 )
         return principal
@@ -142,7 +144,8 @@ class AuthService:
             user_id=record.user_id,
             session_id=record.session_id,
             username=record.username,
-            role=record.role,  # type: ignore[arg-type]
+            role=record.role,
+            must_change_password=record.must_change_password,
             session_token_hash=record.token_hash,
         )
 
@@ -159,6 +162,8 @@ def _to_user_read(user: LoginUserRecord) -> UserRead:
         email=user.email,
         role=user.role,
         status=user.status,
+        created_by_user_id=user.created_by_user_id,
+        must_change_password=user.must_change_password,
         created_at=user.created_at,
         updated_at=user.updated_at,
     )
