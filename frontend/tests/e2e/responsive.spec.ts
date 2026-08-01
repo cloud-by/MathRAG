@@ -18,6 +18,8 @@ for (const viewport of viewports) {
     for (const path of [
       `/conversations/${IDS.conversation}`,
       '/conversations',
+      '/users',
+      '/users/new',
       '/knowledge',
       '/documents',
       '/jobs',

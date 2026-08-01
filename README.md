@@ -8,13 +8,13 @@ MathRAG 是一个面向数学问答场景的 RAG 原型系统，基于 **FastAPI
 
 ## 功能概览
 
-- **认证与角色**：服务端 Session Cookie、`admin`/`user` 角色、CSRF 与显式 CORS 来源校验。
+- **认证与角色**：服务端 Session Cookie、`student`/`teacher`/`admin` 角色、CSRF 与显式 CORS 来源校验。
 - **持久化数学 RAG 问答**：`/api/v1/chat` 保存用户问题、回答、运行状态和引用快照，并支持幂等重试。
 - **用户会话隔离**：Conversation、Message 和 RAG Run 查询始终按当前用户过滤。
 - **Agentic 检索规划**：先由 LLM 将用户问题改写为 1~4 条检索子问题，再合并检索结果。
 - **pgvector 向量检索**：PostgreSQL 是在线知识的唯一事实数据源，按状态、可见性和模型精确过滤。
 - **结构化知识库**：JSONL 种子知识经过可重复导入与 reindex 进入 PostgreSQL/pgvector。
-- **知识管理**：管理员可通过带 revision 的 CRUD API 创建、更新和归档知识，普通用户只读取 public+ready 数据。
+- **知识管理**：管理员可通过带 revision 的 CRUD API 创建、更新和归档知识，非管理员只读取 public+ready 数据。
 - **统一摄取**：管理员上传 PDF 或通过网页/PDF CLI 创建可轮询、取消和重试的导入任务；新数据不再追加 JSONL。
 - **公式渲染**：前端通过 KaTeX 渲染 `\(...\)` 与 `\[...\]` 公式。
 - **LLM JSON 修复**：对模型输出中常见 LaTeX 反斜杠转义问题做容错修复。
@@ -194,12 +194,20 @@ python -m scripts.import_legacy_knowledge
 python -m scripts.reindex_knowledge
 ```
 
-迁移完成后，通过交互式密码输入创建首个管理员或普通用户；密码不会出现在命令行参数和 shell 历史中：
+迁移完成后，通过交互式密码输入创建首个管理员或教师；密码不会出现在命令行参数和 shell 历史中：
 
 ```powershell
 python -m scripts.create_user --username admin --role admin
-python -m scripts.create_user --username alice --email alice@example.local --role user
+python -m scripts.create_user --username teacher01 --email teacher01@example.local --role teacher
 ```
+
+### 账号与角色
+
+- 管理员可以创建和管理学生、教师、管理员。
+- 教师只能创建并管理自己创建的学生。
+- 学生没有账号管理入口。
+- 新建账号和重置密码后，用户必须在首次登录时修改临时密码。
+- 系统不提供公开注册和账号物理删除。
 
 然后分别启动 FastAPI 和 Vite。第一个终端运行：
 
@@ -699,6 +707,7 @@ Content-Type: application/json
 前端位于 `frontend/`，使用 Vue 3、TypeScript、Vite、Vue Router 和本地打包的 KaTeX。主要页面包括：
 
 - 登录、持久化问答、历史恢复、重命名和归档对话；
+- 管理员和教师用户管理、临时密码强制修改；
 - 管理员知识 CRUD、revision 冲突处理、PDF 上传与摄取任务管理；
 - 安全的本地 KaTeX 公式渲染、结构化错误与 request id；
 - 桌面、平板和移动端响应式导航。

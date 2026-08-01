@@ -10,7 +10,7 @@
     "lint": "eslint . --max-warnings=0",
     "format:check": "prettier --check .",
     "test": "vitest",
-    "e2e": "playwright test",
+    "e2e": "node scripts/run-e2e.mjs",
     "api:generate": "openapi-typescript openapi.json -o src/api/schema.d.ts",
     "api:check": "npm run api:generate && git diff --exit-code -- openapi.json src/api/schema.d.ts"
   },

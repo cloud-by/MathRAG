@@ -10,6 +10,11 @@ export const IDS = {
   pendingJob: '77777777-7777-4777-8777-777777777777',
   failedJob: '88888888-8888-4888-8888-888888888888',
   user: '99999999-9999-4999-8999-999999999999',
+  teacher: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  student: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  ownedStudent: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  otherStudent: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+  createdUser: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
 }
 
 const now = '2026-07-31T12:30:00Z'
@@ -131,9 +136,43 @@ function job(id: string, status: string) {
   }
 }
 
+type UserRole = 'admin' | 'teacher' | 'student'
+type UserStatus = 'active' | 'disabled'
+
+export interface ManagedUserFixture {
+  id: string
+  username: string
+  email: string | null
+  role: UserRole
+  status: UserStatus
+  must_change_password: boolean
+  created_by_user_id: string | null
+  created_by_username: string | null
+  created_at: string
+  updated_at: string
+}
+
+function managedUser(
+  values: Pick<ManagedUserFixture, 'id' | 'role' | 'username'> &
+    Partial<ManagedUserFixture>,
+): ManagedUserFixture {
+  return {
+    email: `${values.username}@example.com`,
+    status: 'active',
+    must_change_password: true,
+    created_by_user_id: IDS.user,
+    created_by_username: 'admin',
+    created_at: now,
+    updated_at: now,
+    ...values,
+  }
+}
+
 export interface MockApiState {
   loggedIn: boolean
-  role: 'admin' | 'student'
+  role: UserRole
+  mustChangePassword: boolean
+  users: ManagedUserFixture[]
   conversationTitle: string
   conversationArchived: boolean
   knowledge: ReturnType<typeof knowledgeItem>
@@ -148,11 +187,33 @@ export interface MockApiState {
 
 export async function installMockApi(
   page: Page,
-  options: Partial<Pick<MockApiState, 'loggedIn' | 'role'>> = {},
+  options: Partial<
+    Pick<MockApiState, 'loggedIn' | 'mustChangePassword' | 'role'>
+  > = {},
 ): Promise<MockApiState> {
   const state: MockApiState = {
     loggedIn: options.loggedIn ?? true,
     role: options.role ?? 'admin',
+    mustChangePassword: options.mustChangePassword ?? false,
+    users: [
+      managedUser({
+        id: IDS.teacher,
+        username: 'teacher-existing',
+        role: 'teacher',
+      }),
+      managedUser({
+        id: IDS.ownedStudent,
+        username: 'owned-student',
+        role: 'student',
+        created_by_user_id: IDS.teacher,
+        created_by_username: 'teacher-a',
+      }),
+      managedUser({
+        id: IDS.otherStudent,
+        username: 'other-student',
+        role: 'student',
+      }),
+    ],
     conversationTitle: '二次方程复习',
     conversationArchived: false,
     knowledge: knowledgeItem(),
@@ -170,12 +231,25 @@ export async function installMockApi(
     const url = new URL(request.url())
     const path = url.pathname
     const method = request.method()
+    const currentUserId =
+      state.role === 'admin'
+        ? IDS.user
+        : state.role === 'teacher'
+          ? IDS.teacher
+          : IDS.student
+    const currentUsername =
+      state.role === 'admin'
+        ? 'admin'
+        : state.role === 'teacher'
+          ? 'teacher-a'
+          : 'student'
     const user = {
-      id: IDS.user,
-      username: state.role === 'admin' ? 'admin' : 'student',
+      id: currentUserId,
+      username: currentUsername,
       email: `${state.role}@example.com`,
       role: state.role,
       status: 'active',
+      must_change_password: state.mustChangePassword,
     }
 
     if (path === '/api/v1/auth/me') {
@@ -195,8 +269,111 @@ export async function installMockApi(
       state.loggedIn = false
       return route.fulfill({ status: 204 })
     }
+    if (path === '/api/v1/auth/change-password' && method === 'POST') {
+      state.mustChangePassword = false
+      state.loggedIn = false
+      return route.fulfill({ status: 204 })
+    }
     if (!state.loggedIn) {
       return json(route, errorBody('AUTH_REQUIRED', '请先登录。'), 401)
+    }
+
+    const scopedUsers = () => {
+      if (state.role === 'admin') return state.users
+      if (state.role === 'teacher') {
+        return state.users.filter(
+          (item) =>
+            item.role === 'student' && item.created_by_user_id === IDS.teacher,
+        )
+      }
+      return []
+    }
+
+    if (path === '/api/v1/users' && method === 'GET') {
+      if (state.role === 'student') {
+        return json(
+          route,
+          errorBody('USER_MANAGER_REQUIRED', '无权访问。'),
+          403,
+        )
+      }
+      const query = url.searchParams.get('q')?.toLowerCase()
+      const role = url.searchParams.get('role')
+      const status = url.searchParams.get('status')
+      const pageNumber = Number(url.searchParams.get('page') ?? 1)
+      const pageSize = Number(url.searchParams.get('page_size') ?? 20)
+      const filtered = scopedUsers().filter(
+        (item) =>
+          (!query ||
+            item.username.toLowerCase().includes(query) ||
+            item.email?.toLowerCase().includes(query)) &&
+          (!role || item.role === role) &&
+          (!status || item.status === status),
+      )
+      const start = (pageNumber - 1) * pageSize
+      return json(route, {
+        items: filtered.slice(start, start + pageSize),
+        page: pageNumber,
+        page_size: pageSize,
+        total: filtered.length,
+      })
+    }
+    if (path === '/api/v1/users' && method === 'POST') {
+      if (state.role === 'student') {
+        return json(
+          route,
+          errorBody('USER_MANAGER_REQUIRED', '无权访问。'),
+          403,
+        )
+      }
+      const body = request.postDataJSON() as {
+        username: string
+        email?: string | null
+        role: UserRole
+      }
+      if (state.role === 'teacher' && body.role !== 'student') {
+        return json(
+          route,
+          errorBody('USER_ROLE_FORBIDDEN', '无权创建该角色。'),
+          403,
+        )
+      }
+      const created = managedUser({
+        id: IDS.createdUser,
+        username: body.username,
+        email: body.email ?? null,
+        role: state.role === 'teacher' ? 'student' : body.role,
+        created_by_user_id: currentUserId,
+        created_by_username: currentUsername,
+      })
+      state.users.push(created)
+      return json(route, created, 201)
+    }
+
+    const resetMatch = path.match(/^\/api\/v1\/users\/([^/]+)\/reset-password$/)
+    if (resetMatch && method === 'POST') {
+      const id = decodeURIComponent(resetMatch[1] ?? '')
+      const item = scopedUsers().find((candidate) => candidate.id === id)
+      if (!item) {
+        return json(route, errorBody('USER_NOT_FOUND', '账号不存在。'), 404)
+      }
+      item.must_change_password = true
+      item.updated_at = now
+      return route.fulfill({ status: 204 })
+    }
+
+    const userMatch = path.match(/^\/api\/v1\/users\/([^/]+)$/)
+    if (userMatch) {
+      const id = decodeURIComponent(userMatch[1] ?? '')
+      const item = scopedUsers().find((candidate) => candidate.id === id)
+      if (!item) {
+        return json(route, errorBody('USER_NOT_FOUND', '账号不存在。'), 404)
+      }
+      if (method === 'GET') return json(route, item)
+      if (method === 'PATCH') {
+        Object.assign(item, request.postDataJSON(), { updated_at: now })
+        return json(route, item)
+      }
     }
 
     if (path === '/api/v1/conversations' && method === 'GET') {
