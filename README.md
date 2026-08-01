@@ -751,7 +751,7 @@ Invoke-RestMethod http://127.0.0.1:8000/health/ready
 
 ### 完整 Compose 启动
 
-`docker-compose.yml` 会先用固定 Node 版本构建 Vue，再将 `frontend/dist` 复制到不含 Node.js 与 `node_modules` 的 Python runtime 镜像，并启动固定版本的 PostgreSQL/pgvector。首次创建数据库卷时，先执行迁移，再启动应用：
+`docker-compose.yml` 会先用固定 Node 版本构建 Vue，再将 `frontend/dist` 复制到不含 Node.js 与 `node_modules` 的 Python runtime 镜像。本地 Compose 构建和运行使用 `mathrag:local` 镜像，并启动固定版本的 PostgreSQL/pgvector。首次创建数据库卷时，先执行迁移，再启动应用：
 
 ```powershell
 Copy-Item .env.example .env
