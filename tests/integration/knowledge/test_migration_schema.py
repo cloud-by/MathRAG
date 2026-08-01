@@ -552,7 +552,7 @@ def test_knowledge_schema_upgrade_and_downgrade_round_trip() -> None:
 
         run_alembic(database_url, "upgrade", "head")
         current = run_alembic(database_url, "current")
-        assert "0005_create_documents_ingestion_jobs (head)" in current.stdout
+        assert "0006_add_account_management (head)" in current.stdout
         check = run_alembic(database_url, "check")
         assert "No new upgrade operations detected." in check.stdout
 
