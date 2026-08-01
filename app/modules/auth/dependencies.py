@@ -151,6 +151,24 @@ async def require_admin_csrf(
     return await require_admin(principal)
 
 
+async def require_user_manager(
+    principal: AuthenticatedPrincipal = Depends(require_password_ready),
+) -> AuthenticatedPrincipal:
+    if principal.role not in {"teacher", "admin"}:
+        raise AppError(
+            code="AUTH_FORBIDDEN",
+            message="权限不足。",
+            status_code=403,
+        )
+    return principal
+
+
+async def require_user_manager_csrf(
+    principal: AuthenticatedPrincipal = Depends(require_ready_csrf),
+) -> AuthenticatedPrincipal:
+    return await require_user_manager(principal)
+
+
 def _invalid_session() -> AppError:
     return AppError(
         code="AUTH_SESSION_INVALID",

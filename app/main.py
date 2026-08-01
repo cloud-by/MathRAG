@@ -17,6 +17,7 @@ from app.modules.ingestion.router import router as ingestion_router
 from app.modules.knowledge.router import router as knowledge_management_router
 from app.modules.rag.router import router as rag_router
 from app.modules.system.router import router as system_router
+from app.modules.users.router import router as users_router
 from app.schemas.chat import HealthResponse
 from app.services.rag_pipeline import reset_rag_pipeline
 
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
 
     app.include_router(system_router)
     app.include_router(auth_router)
+    app.include_router(users_router)
     app.include_router(conversations_router)
     app.include_router(rag_router)
     app.include_router(knowledge_management_router)
