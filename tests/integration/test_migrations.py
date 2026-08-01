@@ -50,7 +50,7 @@ def test_migration_upgrade_downgrade_upgrade_round_trip() -> None:
     run_alembic(database_url, "upgrade", "head")
     assert asyncio.run(vector_extension_version(database_url)) == "0.8.5"
     current = run_alembic(database_url, "current")
-    assert "0005_create_documents_ingestion_jobs (head)" in current.stdout
+    assert "0006_add_account_management (head)" in current.stdout
 
     run_alembic(database_url, "downgrade", "base")
     assert asyncio.run(vector_extension_version(database_url)) is None
@@ -58,4 +58,4 @@ def test_migration_upgrade_downgrade_upgrade_round_trip() -> None:
     run_alembic(database_url, "upgrade", "head")
     assert asyncio.run(vector_extension_version(database_url)) == "0.8.5"
     current = run_alembic(database_url, "current")
-    assert "0005_create_documents_ingestion_jobs (head)" in current.stdout
+    assert "0006_add_account_management (head)" in current.stdout
